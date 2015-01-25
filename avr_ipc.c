@@ -245,7 +245,7 @@ sendMessage(int msqid, long mtype, int cmd, char *txt)
 		ipcLog("msgsnd errno: %d\n",errno);
 		ipcLog("killing pid : %d\n",ipc_dict[0].pid);
 		// fatal, shut down the whole process group
-		kill((short)ipc_dict[0].pid,SIGTERM);
+		kill(ipc_dict[0].pid,SIGTERM);
 	}
 
 	return 0;
@@ -269,6 +269,7 @@ recvMessage(int msqid, long mtype)
 	size_t size=sizeof(msg)-sizeof(long);
 	int msgflg=0;  // may add later if need for selective IPC_NOWAIT arises
 
+	/*
 	ipcLog("msgrcv(msqid=%d,msg=%x,size=%d,mtype=%d,msgflg=%d)\n"
 	, msqid
 	, msg
@@ -276,15 +277,16 @@ recvMessage(int msqid, long mtype)
 	, mtype
 	, msgflg
 	);
+	*/
 
  	// man: ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp, int msgflg);
 
 	// mtype should be the pid of the caller
 	if(msgrcv(msqid,&msg,size,mtype,msgflg)<0) 
 	{
-		ipcLog("msgrcv failed ERROR: %s\n",strerror(errno));
+		ipcLog("msgrcv failed Fatal ERROR: %s\n",strerror(errno));
 		// fatal, shut down the whole process group
-		kill((short)ipc_dict[0].pid,SIGTERM);
+		kill(ipc_dict[0].pid,SIGTERM);
 	}
 	return &msg;
 }

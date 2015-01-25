@@ -21,7 +21,7 @@ checkDeath()
 {
 int x,id;
 	id=wait(&x);
-	ipcLog("Child process %d died child exit code=%d\n",id,x);
+	ipcLog("Child process %d Died With exit code=%d\n",id,x);
 
 	// reset the signal
 	signal(SIGCLD,checkDeath);
@@ -37,10 +37,11 @@ timeout()
 void // signal handler
 ipcTerminate()
 {
-int i, cpid;
+int i,x,id;
+pid_t cpid;
 
-	ipcLog("Terminiate Request! SIGTERM\n");
-	ipcLog("Killing chldren\n");
+	ipcLog("Proc %d Terminiate Requestd! SIGTERM\n",getpid());
+	ipcLog("Killing Chld Co-processes\n");
 
 	/* kill all the other processes in the
 	** application group, 0 is us, start at 1
@@ -52,14 +53,17 @@ int i, cpid;
 
 		cpid=ipc_dict[i].pid;
 
-		ipcLog("Killing pid %d in slot %d\n",cpid,i);
-		kill((short)cpid,SIGTERM);
+		ipcLog("Killing Child Process %d in Slot %d\n",cpid,i);
+
+		// kill and wait to prevent zombie process
+		kill(cpid,SIGTERM); 
+		id=wait(&x);
+		if(id>0) ipcLog("Child process %d Died With exit code=%d\n",id,x);
 	}
 	/* give the children time to clean up before
 	** we remove the shared memory segment in
 	** usrExit()
 	*/
-	sleep(3);
 
 	ipcLog("Freeing Shared Memory segment\n");
 	shfree();
@@ -140,7 +144,8 @@ int pid=getpid();
 
 startAvr(char **a, int *id)
 {
-int i,l,fk,qsize;
+int i ,l ,qsize;
+pid_t fk;
 static char 
   wb[128]
 , prog[41]
@@ -188,7 +193,7 @@ static char
 			ipcLog("Can't execute [%s] Error %d\n",prog,errno);
 
 			// kill child just in case
-			kill((short)fk,SIGTERM);
+			kill(fk,SIGTERM);
 
 		default:
 			break;

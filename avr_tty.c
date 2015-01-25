@@ -2,31 +2,35 @@
 #include <termio.h>
 #include <fcntl.h>
 
-static int
-  speed
-, vmin
-, vtime
-, csize
-, stops
-, parity
+/* values that are set to defaults
+** can be changed with command line
+** options
+*/
+static int 
+  speed  = B576000
+, csize  = CS8 //N81
+, parity = 0
+, vmin   = 1
+, vtime  = 10
+, stops  = 1
 , fd
-, pid
+, avr_test
+, avr_dlev
+, avrWrite(int, int, BYTE *)
+;
+
+pid_t
+  pid
 , ppid
 , cpid
 , slot
-, avr_test
-, avr_dlev
-, sav_cnt
 ;
-static IPC_DICT 
-  *dict
-;
-extern int
-  errno
-;
+
+static IPC_DICT *dict;
+
 static char
-  *device
-, *ofile
+  *device = "ttyATH0"
+, *ofile  = "/home/yun/log/ttyATH0.out"
 , *hexString()
 , errmsg[512]
 ;
@@ -36,18 +40,30 @@ static BYTE
 , *read_hil()
 , getSum()
 ;
-static struct termio
-  tty
-;
+
+static struct termio tty;
+
 static char
   *libdir
 , fn[40]
 , ib[80]
 ;
+
 void // signal handler
 ttyTerminate()
 {
-	ipcLog("TTY Terminiate Request!\n");
+int x,id;
+	ipcLog("Proc %d TTY Terminiate Requested!\n",getpid());
+	if(cpid)
+	{
+		ipcLog("Killing cpid %d\n",cpid);
+		kill((short)cpid,SIGTERM);
+
+		// don't leave a zombie
+		id=wait(&x);
+
+		ipcLog("Child Process %d died With xit code=%d\n",id,x);
+	}
 	usrExit(0,SIGTERM);
 }
 
@@ -58,6 +74,7 @@ int cc, loop_flag;
 register int i;
 char tb[128];
 FILE *fp;
+MSG_BUF *msg;
 
 	signal(SIGINT,SIG_IGN);
 	signal(SIGTERM,ttyTerminate);
@@ -79,8 +96,8 @@ FILE *fp;
 
 	msqid=getMessageQueue(P_AVR,"/tmp/ipc_application");
 
-	strcpy(dict->tty,device);
-	time(&dict->online);
+	// notify root process we are here
+	initNotify(msqid);
 
 	ipcLog("AVR Process %d On-Line in slot %d\n"
 	, pid
@@ -94,7 +111,7 @@ FILE *fp;
 		usrExit(0,SIGTERM);
 	}
 
-	ipcLog("AVR port=%s speed=%d dlev:%d\n"
+	ipcLog("Successfully Opend AVR port=%s speed=%d dlev:%d\n"
 	, device
 	, getSpeed(speed)
 	, avr_dlev);
@@ -104,52 +121,130 @@ FILE *fp;
 
 	cc=0;
 	/* ask for heartbeat early on */
-	avr_receive();
-	usrExit(0,SIGTERM);
-}
-
-avr_receive()
-{
-int cnt;
-	/* read a AVR Message */
-	while(read_hil(fd,&cnt,com_buf)==NULL) 
-	;;
-	return cnt;
-}
-
-BYTE *
-read_hil(int fd, int *cnt, BYTE *ib)
-{
-int i;
-int x;
-
-	for(i=0; i<255 ; i++)
+	switch(cpid=fork())
 	{
-		if((x=read(fd,&ib[i],1))<0)
+		case -1:
+			ipcLog("Can't fork error: %s\n",strerror(errno));
+			usrExit(errno,SIGTERM);
+
+		case 0:
+			break;
+
+		default:
+			beChildProcess();
+			break;
+	}
+
+	/* we are now a parent process with a child on the tty receive
+	** our job now is to listen to the message queue for any further
+	** instructions that would have us transmit to the tty
+	*/
+	for(;;)
+	{
+		/* wait for messages or signals */
+		msg=recvMessage(msqid, pid);
+		ipcLog("Got Message from %d [%s] \n",msg->rsvp,msg->text);
+	}
+}
+
+int
+avrWrite(int fd, int cnt, BYTE *s)
+{
+int cc;
+	if((cc=write(fd,s,cnt))<cnt)
+	{
+		//Uh-Oh!
+		ipcLog("Serial Write Error: %s\n",strerror(errno));
+	}
+	return cc;
+}
+
+beChildProcess()
+{
+int cnt, c, x, i;
+char buf[1024];
+
+	// we inherited signal traps from parent
+
+	for(i=0;;i++)
+	{
+		// don't allow buffer over-run
+		if(i==1023)
 		{
-			return(NULL);
+
+			buf[i]='\0';
+			buf[--i]='\n';
+			ipcLog("Serial Over-run Line: [%s]\n",buf);
+			i=-1;
+			continue;
 		}
+
+		// read 1 byte
+		if((c=read(fd,&buf[i],1))<0)
+		{
+			//Uh-Oh!
+			ipcLog("Serial Read Error: %s\n",strerror(errno));
+
+			// send kill signal to parent process
+			kill((pid_t)ppid,SIGTERM);
+
+			// wait for Parent to kill Us
+			pause();
+		}
+
 		if(x!=1)
 		{
 			if(x>=0) ipcLog("wanted 1 saw %d\n",x);
 			i--;
 			continue;
 		}
-		ipcDebug(50,"<<[%02d]< %02x\n",i,ib[i]);
+
+		// we have a character
+		switch(buf[i])
+		{
+		case '\n':	//end of line?
+			buf[i]='\0';
+			i=-1; // for() will increment it to 0
+			ipcLog("Serial Read Line: [%s]\n",buf);
+			break;
+
+		}
+		// we should put some code in here
+		// to implement protocol for avr sketches
+		//ipcDebug(50,"<<[%02d]< %02x\n",i,buf[i]);
+
+		ipcLog("<<[%02d]< %02x\n",i,buf[i]);
 	}
-	*cnt=i;
-	return(ib);
 }
 
-getSpeed(int n)
+getSpeed(int baud)
 {
-	switch(n){
-	case B300:   return(300);
-	case B1200:  return(1200);
-	case B2400:  return(2400);
-	case B4800:  return(4800);
-	case B9600:  return(9600);
-	case B19200: return(19200);
+	switch(baud)
+	{
+	case B300		: return(300);
+	case B600		: return(600);
+	case B1200		: return(1200);
+	case B1800		: return(1800);
+	case B2400		: return(2400);
+	case B4800		: return(4800);
+	case B9600		: return(9600);
+	case B19200		: return(19200);
+	case B38400		: return(38400);
+	case B57600		: return(57600);
+	case B115200	: return(115200);
+	case B230400	: return(230400);
+	case B460800	: return(460800);
+	case B500000	: return(500000);
+	case B576000	: return(576000);
+	case B921600	: return(921600);
+	case B1000000	: return(1000000);
+	case B1152000	: return(1152000);
+	case B1500000	: return(1500000);
+	case B2000000	: return(2000000);
+	case B2500000	: return(2500000);
+	case B3000000	: return(3000000);
+	case B3500000	: return(3500000);
+	case B4000000	: return(4000000);
 	}
 }
 
@@ -167,7 +262,7 @@ extern int errno;
 		usrExit(errno,SIGTERM);
 	}
 
-	if((fd=open(dev, O_RDWR|O_NDELAY))<0)
+	if((fd=open(dev,O_RDWR|O_NDELAY))<0)
 	{
 		ipcLog("Can't open port %s errno:%d", dev,errno);
 		exit(0);
@@ -185,24 +280,20 @@ extern int errno;
 		ipcLog("Fcntl Error %d\n",errno);
 		usrExit(errno,SIGTERM);
 	}
+
+	// Ensure blocking reads
 	if(fcntl(fd,F_SETFL,(fcntl(fd,F_GETFL)&~O_NDELAY),0))
 	{
 		ipcLog("Line %d Fcntl Error %d\n",__LINE__,errno);
 		usrExit(errno,SIGTERM);
 	}
+
 	return(fd);
 }
 
 getOptions(char **av)
 {
 register int i;
-	/* set hil sio defaults */
-	speed  = B9600;
-	csize  = CS8;
-	parity = 0;
-	vmin   = 1;
-	vtime  = 10;
-	device = "ttya";
 
 	for(i=1; av[i]; i++)
 	{
@@ -223,11 +314,31 @@ register int i;
 			case 's':
 				switch(atoi(&av[i][2]))
 				{
-				case 1200 : speed = B1200; break;
-				case 2400 : speed = B2400; break;
-				case 4800 : speed = B4800; break;
-				case 9600 : speed = B9600; break;
-				default   : 
+				case 300		: speed = B300;		break;
+				case 600		: speed = B600;		break;
+				case 1200		: speed = B1200;	break;
+				case 1800		: speed = B1800;	break;
+				case 2400		: speed = B2400;	break;
+				case 4800		: speed = B4800;	break;
+				case 9600		: speed = B9600;	break;
+				case 19200		: speed = B19200;	break;
+				case 38400		: speed = B38400;	break;
+				case 57600		: speed = B57600;	break;
+				case 115200		: speed = B115200;	break;
+				case 230400		: speed = B230400;	break;
+				case 460800		: speed = B460800;	break;
+				case 500000		: speed = B500000;	break;
+				case 576000		: speed = B576000;	break;
+				case 921600		: speed = B921600;	break;
+				case 1000000	: speed = B1000000;	break;
+				case 1152000	: speed = B1152000;	break;
+				case 1500000	: speed = B1500000;	break;
+				case 2000000	: speed = B2000000;	break;
+				case 2500000	: speed = B2500000;	break;
+				case 3000000	: speed = B3000000;	break;
+				case 3500000	: speed = B3500000;	break;
+				case 4000000	: speed = B4000000;	break;
+				default   		: 
 					ipcLog("%s not a legal speed\n",&av[i][2]);
 					usrExit(0,SIGTERM);
 				}
@@ -249,19 +360,19 @@ register int i;
 				break;
 
 			case 'o':
-				ofile = &av[i][2];
+				ofile=&av[i][2];
 				break;
 
 			case 'v':
-				device = &av[i][2];
+				device=&av[i][2];
 				break;
 
 			case 'm':
-				vmin = atoi(&av[i][2]);
+				vmin=atoi(&av[i][2]);
 				break;
 
 			case 't':
-				vtime = atoi(&av[i][2]);
+				vtime=atoi(&av[i][2]);
 				break;
 			}
 		}
@@ -283,9 +394,4 @@ register int i;
 	for(i=0; i<n; i++) l+=sprintf(tb+l,"%02x ",s[i]);
 	sprintf(tb+l,"]");
 	return(tb);
-}
-
-avrWrite(int hd, int n, BYTE *s)
-{
-	write(hd,s,n);
 }
