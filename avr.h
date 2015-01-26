@@ -17,21 +17,17 @@
 */
 #define MAX_IPC		5
 
-#define TRACE fprintf(stderr,"FN: %s LN:%d\n",__FILE__,__LINE__);
+#define TRACE ipcLog("PID: %d FN: %s LN:%d\n",getpid(),__FILE__,__LINE__);
  
 /* IPC Entity Types*/
 #define P_ROOT		(1<<0)
-#define P_AVR		(1<<1)
+#define P_TTY		(1<<1)
 #define P_SQLITE	(1<<2)
-
 
 /* IPC Command Definitions */
 #define C_LOGIN		(1<<0)
 #define C_LOGOUT	(1<<1)
 
-/* keep the compiler from bitching about handler functions
-typedef void (*sighandler_t)(int);
- 
 /* Ipc Dictionary structre
 ** One for each 'anticipated' process
 ** will be allocated in shared memory
@@ -71,7 +67,10 @@ MSG_BUF *recvMessage(int msqid, long mtype) ;
 
 typedef unsigned char BYTE;
 
-extern char *ipcCmdName(int cmd);
+extern char 
+  *ipcCmdName(int cmd)
+, *ipcSigName(int sig)
+;
 
 extern int
   ipc_dlev
@@ -87,7 +86,7 @@ extern int
 extern long shmid;
 
 extern void
-  usrExit(int err, int sig)
+  ipcExit(int err, int sig)
 , logClose()
 , initNotify()
 ;

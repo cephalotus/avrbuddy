@@ -11,35 +11,30 @@ IPC_DICT
 ;
 void
   shfree()
-, ipcSlotClear(int)
+, ipcSlotClear(int pid)
 , initNotify()
 ;
+char 
+  *ipcCmdName(int cmd)
+, *ipcTypeName(int ptype)
+;
 
-// Signal handlers for all ipc processes
+// Common Exit Point for all processes
 void
-usrExit(int err, int sig)
+ipcExit(int err, int sig)
 {
-	ipcLog("Process %d shutdown Exit code=%d Signal=%d\n"
+	ipcLog("Process %d shutdown Exit code=%d [%s] Signal=%d\n"
 	, getpid()
 	, err
+	, strerror(err)
 	, sig
 	);
+
+	// Vacate our ipc slot
+	ipcSlotClear(getpid());
+
 	ipcLog("Goodbye!\n");
 	exit(err); 
-}
-
-char *
-getProcName(int ptype)
-{
-	char *name;
-	switch(ptype)
-	{
-	case	P_ROOT		: name="P_ROOT";	break;
-	case	P_AVR		: name="P_AVR";		break;
-	case	P_SQLITE	: name="P_SQLITE";	break;
-	default				: name="???";		break;
-	}
-	return name;
 }
 
 int
@@ -47,33 +42,36 @@ getSharedMemory(int ptype, const char *token)
 {
 int slot, sz;
 pid_t pid=getpid();
+char *s;
 
-	ipcLog("getshmem(%d,%d,%s)\n",pid,ptype,token);
+	ipcLog("getshmem(pid:%d,token:%s)\n",pid,token);
 
-	if(allocateSharedMemory(ptype,token)!=0)
+	if(allocateSharedMemory(pid,ptype,token)!=0)
 	{
-		ipcLog("Shalloc Failed ERROR: %s\n",strerror(errno));
-		return errno;
+		ipcLog("allocateSharedMemory Failed ERROR: %s\n",strerror(errno));
+		ipcExit(errno,0);
 	}
 
-	// scan the dictionary for a spare slot
-	// loop will break on pid=0
+	// scan the dictionary for a spare slot, loop will break on vacant slot (pid=0)
 	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
 	{
-		char *s=getProcName(ipc_dict[slot].type);
-		ipcLog("slot %d TYPE:%s PID:%d\n",slot,s,ipc_dict[slot].pid);
+		s=ipcTypeName(ipc_dict[slot].type);
+		ipcLog("Busy IPC Slot %d Type:%s Pid:%d\n",slot,s,ipc_dict[slot].pid);
 	}
 
 	if(slot==MAX_IPC)
 	{
 		ipcLog("No Application Dictionary Slots available %d Max\n",MAX_IPC);
-		exit(0);
+		ipcExit(errno,0);
 	}
 
-	// set initial values
+	// set initial common values
 	ipc_dict[slot].pid=getpid();
 	ipc_dict[slot].type=ptype;
 	ipc_dict[slot].online=time(0);
+
+	s=ipcTypeName(ipc_dict[slot].type);
+	ipcLog("Acquired IPC Slot %d Type:%s Pid:%d\n",slot,s,ipc_dict[slot].pid);
 
 	return slot;
 }
@@ -96,39 +94,48 @@ int slot;
 	{
 		if(type==ipc_dict[slot].type) return slot;
 	}
+	return -1;
 }
 
 int
-allocateSharedMemory(int ptype, const char *token)
+getSlotByPid(pid_t pid)
 {
-char *mem,*shmat();
-char name[255];
+int slot;
+	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
+	{
+		if(pid==ipc_dict[slot].pid) return slot;
+	}
+	return -1;
+}
+
+int
+allocateSharedMemory(pid_t pid, int ptype, const char *token)
+{
+char *mem, *shmat();
 key_t key;
 int sz, flags=0;
 
-	if(ptype==P_ROOT)
-	{
-		flags=IPC_CREAT|0666;
-	}
-
-	// if there is no file create it
+	// if there is no token file create it
 	if(access(token,0)) fclose(fopen(token,"w"));
 
+	// use ftok on a file to generate the key
 	if((key=ftok(token,1))<0) 
 	{
-		ipcLog("ftok failed ERROR: %s\n",strerror(errno));
-		return errno;
+		ipcLog("ftok(%s) failed ERROR: %s\n",token,strerror(errno));
+		ipcExit(errno,0);
 	}
+	// only lead process creates a segment
+	if(ptype==P_ROOT) flags=IPC_CREAT|0666;
 
-	/* get enough shared memory for 10 IPC Links */
+	/* get enough shared memory for MAX_IPC Links (devined in avr.h)*/
 	sz=sizeof(IPC_DICT)*MAX_IPC;
 
-	// ipcLog("shmget(key=%x,bytes=%x,flags=%x) token=%s\n",key,sz,flags,token);
+	ipcLog("shmget(key=%d,bytes=%d,flags=%x) token=%s\n",key,sz,flags,token);
 
 	if((shmid=shmget(key,sz,flags))<0)
 	{
 		ipcLog("Can't get shared segment size %d for key %d errno:%d\n",sz,key,errno);
-		return errno;
+		ipcExit(errno,0);
 	}
 
 	if((mem=shmat(shmid,(char*)0,0))==(char *)-1L)
@@ -138,7 +145,7 @@ int sz, flags=0;
 			shmctl(shmid,IPC_RMID,0);
 		}
 		ipcLog("Can't attatch to shared segment errno:%d\n",errno);
-		exit errno;
+		ipcExit(errno,0);
 	}
 
 	// only avr_init process should do this 
@@ -164,17 +171,16 @@ shfree()
 }
 
 void
-vacateSlot(int n)
+ipcSlotClear(pid_t pid)
 {
-	ipcSlotClear(n);
-}
+int slot;
+	// P_ROOT may have alread vacated it
+	if((slot=getSlotByPid(pid))<0) return;
 
-void
-ipcSlotClear(int x)
-{
-	ipcLog("clearing slot %d\n",x);
-	ipc_dict[x].pid=0;
-	ipc_dict[x].type=0;
+	pid=ipc_dict[slot].pid;
+	memset(&ipc_dict[slot],0,sizeof(IPC_DICT));
+	ipc_dict[slot].type=0;
+	ipcLog("Vacated ipc slot: %d for pid: %d\n",slot,pid);
 }
 
 int 
@@ -239,13 +245,14 @@ sendMessage(int msqid, long mtype, int cmd, char *txt)
 	, msgflg
 	);
 
-	if(msgsnd(msqid,&msg,msg.len,msgflg)<0) 
+	for(;;) 
 	{
-		ipcLog("msgsnd failed ERROR: %s\n",strerror(errno));
-		ipcLog("msgsnd errno: %d\n",errno);
-		ipcLog("killing pid : %d\n",ipc_dict[0].pid);
-		// fatal, shut down the whole process group
-		kill(ipc_dict[0].pid,SIGTERM);
+		if(msgsnd(msqid,&msg,msg.len,msgflg)<0) 
+		{
+			ipcLog("msgsnd failed ERROR: %s\n",strerror(errno));
+			// don't let intrrupted system call screw us
+			if(errno!=EINTR) return errno;
+		}
 	}
 
 	return 0;
@@ -280,13 +287,15 @@ recvMessage(int msqid, long mtype)
 	*/
 
  	// man: ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp, int msgflg);
-
 	// mtype should be the pid of the caller
-	if(msgrcv(msqid,&msg,size,mtype,msgflg)<0) 
+	for(;;) 
 	{
-		ipcLog("msgrcv failed Fatal ERROR: %s\n",strerror(errno));
-		// fatal, shut down the whole process group
-		kill(ipc_dict[0].pid,SIGTERM);
+		if(msgrcv(msqid,&msg,size,mtype,msgflg)<0) 
+		{
+			ipcLog("msgrcv failed ERROR: %s\n",strerror(errno));
+			// don't let intrrupted system call screw us
+			if(errno!=EINTR) return NULL;
+		}
 	}
 	return &msg;
 }
@@ -295,25 +304,36 @@ void
 initNotify(int qid)
 {
 static char msg[81];
-pid_t root_pid;
+pid_t root_pid, pid=getpid();
+int slot, type;
+char *str;
 
-	ipcLog("init_notyfy() qid=%d\n",qid);
+	if((slot=getSlotByPid(pid))<0) return;
+	type=ipc_dict[slot].type;
+	str=ipcTypeName(type);
+
 	// root init process is always in slot[0]
 	root_pid=ipc_dict[0].pid;
-	sprintf(msg,"Process %d Loggin in",getpid());
+	sprintf(msg,"Process %d Type %s Logged Into IPC Slot %d"
+	, pid
+	, str
+	, slot
+	);
 	sendMessage(qid, root_pid, C_LOGIN, msg);
 }
 
 char *
-ipcTypeString(int type)
+ipcTypeName(int ptype)
 {
-	switch(type)
+	char *name;
+	switch(ptype)
 	{
-	case P_ROOT		: return "ROOT";
-	case P_AVR		: return "AVR";
-	case P_SQLITE	: return "SQLITE";
+	case	P_ROOT		: name="P_ROOT";	break;
+	case	P_TTY		: name="P_TTY";		break;
+	case	P_SQLITE	: name="P_SQLITE";	break;
+	default				: name="???";		break;
 	}
-	return "UNKNOWN";
+	return name;
 }
 
 char *
@@ -325,4 +345,39 @@ ipcCmdName(int cmd)
 	case C_LOGOUT: return "LOGOUT";
 	}
 	return "UNKNOWN";
+}
+
+char *
+ipcSigName(int sig)
+{
+	switch(sig)
+	{
+	case  1: return "SIGHUP";
+	case  2: return "SIGINT";
+	case  3: return "SIGQUIT";
+	case  4: return "SIGILL";
+	case  5: return "SIGTRAP";
+	case  6: return "SIGABRT";
+	case  7: return "SIGBUS";
+	case  8: return "SIGFPE";
+	case  9: return "SIGKILL";
+	case 10: return "SIGUSR1";
+	case 11: return "SIGSEGV";
+	case 12: return "SIGUSR2";
+	case 13: return "SIGPIPE";
+	case 14: return "SIGALRM";
+	case 15: return "SIGTERM";
+	case 16: return "SIGSTKFLT";
+	case 17: return "SIGCHLD";
+	case 18: return "SIGCONT";
+	case 19: return "SIGSTOP";
+	case 20: return "SIGTSTP";
+	case 21: return "SIGTTIN";
+	case 22: return "SIGTTOU";
+	case 23: return "SIGURG";
+	case 24: return "SIGXCPU";
+	case 25: return "SIGXFSZ";
+	case 26: return "SIGVTALRM";
+	default: return "???";
+	}
 }

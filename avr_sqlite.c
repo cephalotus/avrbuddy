@@ -1,30 +1,27 @@
 #include <sqlite3.h> 
 #include "avr.h"
 
-static IPC_DICT 
-  *dict
-;
-sqlite3 
-  *db
-;
-static char 
-  *zErrMsg
-;
+static IPC_DICT *dict;
+static sqlite3 *db;
+static char *zErrMsg;
+
 static int
   pid
 , ppid
 , slot
 ;
+
 void // signal handler
 dbDterminate(int sig)
 {
-	ipcLog("SQLITE Terminiate Request! SIG:%d\n",sig);
+	ipcLog("SQLITE Terminiate Request! SIG: %s\n",ipcSigName(sig));
 	if(zErrMsg) sqlite3_free(zErrMsg);
 	if(db)      sqlite3_close(db);
-	usrExit(0,sig);
+	ipcExit(0,sig);
 }
 
-typedef int (*sqlite3_callback)(
+typedef int (*sqlite3_callback)
+(
 void*,    /* Data provided in the 4th argument of sqlite3_exec() */
 int,      /* The number of columns in row */
 char**,   /* An array of strings representing fields in the row */
@@ -66,7 +63,7 @@ main(int argc, char* argv[])
 
 	/* pick up shared memory environment */
 	slot=getSharedMemory(P_SQLITE,"/tmp/ipc_application");
-	ipcLog("Got memory at %x slot=%d\n",ipc_dict,slot);
+	ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
 	msqid=getMessageQueue(P_SQLITE,"/tmp/ipc_application");
@@ -93,7 +90,7 @@ main(int argc, char* argv[])
 		/* wait for messages or signals */
 		msg=recvMessage(msqid, pid);
 
-		ipcLog("Got Message from %d [%s] \n",msg->rsvp,msg->text);
+		ipcLog("Message from %d [%s] \n",msg->rsvp,msg->text);
 
 		// Execute SQL statement
 		if((rc=sqlite3_exec(db, sql, callback, 0, &zErrMsg)) != SQLITE_OK )

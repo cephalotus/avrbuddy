@@ -17,8 +17,7 @@ AVR_SQLITE=avr_sqlite.o avr_ipc.o avr_log.o
 MON_OBJS=avr_mon.o avr_memory.o avr_log.o
 LOD_OBJS=avr_load.o avr_memory.o avr_log.o
 
-all: $(BIN)avr_tty $(BIN)avr_init 
-#$(BIN)avr_sqlite
+all: $(BIN)avr_tty $(BIN)avr_init $(BIN)avr_sqlite
 
 $(AVR_PUMP) $(MON_OBJS) $(PRI_OBJS) $(AVR_OBJS): avr.h
 
@@ -43,6 +42,9 @@ $(BIN)avr_sqlite: $(AVR_SQLITE)
 
 run:
 	avr_init
+
+kill:
+	pkill avr_init
 
 clean:
 	-rm ../log/*

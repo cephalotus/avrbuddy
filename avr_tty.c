@@ -50,21 +50,21 @@ static char
 ;
 
 void // signal handler
-ttyTerminate()
+ttyTerminate(int sig)
 {
 int x,id;
-	ipcLog("Proc %d TTY Terminiate Requested!\n",getpid());
+	ipcLog("Proc %d TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
 	if(cpid)
 	{
 		ipcLog("Killing cpid %d\n",cpid);
-		kill((short)cpid,SIGTERM);
+		kill(cpid,SIGTERM);
 
 		// don't leave a zombie
 		id=wait(&x);
 
-		ipcLog("Child Process %d died With xit code=%d\n",id,x);
+		ipcLog("Child Process %d died With exit code=%d\n",id,x);
 	}
-	usrExit(0,SIGTERM);
+	ipcExit(0,0);
 }
 
 main(int argc, char *argv[])
@@ -87,19 +87,19 @@ MSG_BUF *msg;
 	/*set up application logging */
 	logOpen(device);
 
-	ipcLog("Starting P_AVR process!\n");
+	ipcLog("Starting P_TTY process!\n");
 
 	/* pick up shared memory environment */
-	slot=getSharedMemory(P_AVR,"/tmp/ipc_application");
+	slot=getSharedMemory(P_TTY,"/tmp/ipc_application");
 	ipcLog("Got memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
-	msqid=getMessageQueue(P_AVR,"/tmp/ipc_application");
+	msqid=getMessageQueue(P_TTY,"/tmp/ipc_application");
 
 	// notify root process we are here
 	initNotify(msqid);
 
-	ipcLog("AVR Process %d On-Line in slot %d\n"
+	ipcLog("TTY Process %d On-Line in slot %d\n"
 	, pid
 	, slot
 	);
@@ -107,11 +107,11 @@ MSG_BUF *msg;
 	/* open the comm port */
 	if((fd=devOpen(device))<0)
 	{
-		ipcLog("bad open err %d on %s\n",errno, device);
-		usrExit(0,SIGTERM);
+		ipcLog("Can't open %s Error: %s\n",device,strerror(errno));
+		ipcExit(errno,0);
 	}
 
-	ipcLog("Successfully Opend AVR port=%s speed=%d dlev:%d\n"
+	ipcLog("Successfully Opened TTY port=%s speed=%d dlev:%d\n"
 	, device
 	, getSpeed(speed)
 	, avr_dlev);
@@ -125,7 +125,7 @@ MSG_BUF *msg;
 	{
 		case -1:
 			ipcLog("Can't fork error: %s\n",strerror(errno));
-			usrExit(errno,SIGTERM);
+			ipcExit(errno,0);
 
 		case 0:
 			break;
@@ -182,14 +182,13 @@ char buf[1024];
 		// read 1 byte
 		if((c=read(fd,&buf[i],1))<0)
 		{
+			if(errno==EINTR) { i--; continue; }
 			//Uh-Oh!
 			ipcLog("Serial Read Error: %s\n",strerror(errno));
 
 			// send kill signal to parent process
-			kill((pid_t)ppid,SIGTERM);
-
-			// wait for Parent to kill Us
-			pause();
+			kill(ppid,SIGTERM);
+			ipcExit(errno,0);
 		}
 
 		if(x!=1)
@@ -259,13 +258,12 @@ extern int errno;
 	if(isatty(0) && ioctl(0,TCGETA,&tty))
 	{
 		ipcLog("Fcntl Error %d\n",errno);
-		usrExit(errno,SIGTERM);
+		return -1;
 	}
 
 	if((fd=open(dev,O_RDWR|O_NDELAY))<0)
 	{
-		ipcLog("Can't open port %s errno:%d", dev,errno);
-		exit(0);
+		return -1;
 	}
 
 	/* set control flags  use RTS/CTS flow */
@@ -278,16 +276,15 @@ extern int errno;
 	if(ioctl(fd,TCSETAW,&tty))
 	{
 		ipcLog("Fcntl Error %d\n",errno);
-		usrExit(errno,SIGTERM);
+		ipcLog("Line %d Fcntl Error %d\n",__LINE__,errno);
 	}
 
 	// Ensure blocking reads
 	if(fcntl(fd,F_SETFL,(fcntl(fd,F_GETFL)&~O_NDELAY),0))
 	{
 		ipcLog("Line %d Fcntl Error %d\n",__LINE__,errno);
-		usrExit(errno,SIGTERM);
+		return -1;
 	}
-
 	return(fd);
 }
 
@@ -340,7 +337,7 @@ register int i;
 				case 4000000	: speed = B4000000;	break;
 				default   		: 
 					ipcLog("%s not a legal speed\n",&av[i][2]);
-					usrExit(0,SIGTERM);
+					ipcExit(0,0);
 				}
 				break;
 

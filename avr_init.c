@@ -10,67 +10,67 @@ static int
 , prog_id[25]
 , ipc_slot
 ;
+
 char 
   **split(char *s, char k)
 ,  *libdir="/home/yun/lib";
 ;
 
-
 void // signal handler
-checkDeath()
+sigDeadChild(int sig)
 {
-int x,id;
-	id=wait(&x);
-	ipcLog("Child process %d Died With exit code=%d\n",id,x);
+int status; pid_t pid;
+	if((pid=wait(&status))>0)
+	{
+		ipcLog("Child %d is Dead\n",pid);
+		ipcSlotClear(pid);
+	}
 
 	// reset the signal
-	signal(SIGCLD,checkDeath);
+	signal(SIGCLD,sigDeadChild);
 }
 
 void // signal handler
-timeout()
+sigTerminate(int sig)
 {
-	signal(SIGALRM,timeout);
-	alarm(10);
-}
+int status, slot, kflag;
+pid_t pid;
 
-void // signal handler
-ipcTerminate()
-{
-int i,x,id;
-pid_t cpid;
+	ipcLog("Init Proc %d Terminiate Requestd! SIG: %s\n",getpid(),ipcSigName(sig));
 
-	ipcLog("Proc %d Terminiate Requestd! SIGTERM\n",getpid());
-	ipcLog("Killing Chld Co-processes\n");
-
-	/* kill all the other processes in the
-	** application group, 0 is us, start at 1
-	*/
-	for(i=1; i<MAX_IPC; i++)
+	// kill all processes in the application group, 
+	// 0 is me, so start at slot number 1
+	for(kflag=slot=1; slot<MAX_IPC; slot++)
 	{
 		// skip empty slots
-		if(!ipc_dict[i].pid) continue;
+		if(!ipc_dict[slot].pid) continue;
+		kflag++;
 
-		cpid=ipc_dict[i].pid;
+		pid=ipc_dict[slot].pid;
 
-		ipcLog("Killing Child Process %d in Slot %d\n",cpid,i);
+		ipcLog("Killing Child Process %d in Ipc Slot %d\n",pid,slot);
 
 		// kill and wait to prevent zombie process
-		kill(cpid,SIGTERM); 
-		id=wait(&x);
-		if(id>0) ipcLog("Child process %d Died With exit code=%d\n",id,x);
+		kill(pid,SIGTERM); 
+
+		if((pid=waitpid(pid,&status,WNOHANG))>0)
+		{
+			ipcLog("Child %d is Dead\n",pid);
+		}
 	}
-	/* give the children time to clean up before
-	** we remove the shared memory segment in
-	** usrExit()
-	*/
+	if(!kflag)
+	{
+		ipcLog("No Slots Occupied by Sub-Processes\n");
+	}
 
 	ipcLog("Freeing Shared Memory segment\n");
 	shfree();
 
 	ipcLog("Removing Message Queue, id=%d\n",msqid);
 	rm_queue(msqid);
-	usrExit(0,SIGTERM);
+
+	// we should be the last one standing.
+	ipcExit(0,0);
 }
 
 main(char **ac, int av)
@@ -95,7 +95,7 @@ int pid=getpid();
 	daemonize();
 
 	ipc_slot=getSharedMemory(P_ROOT,"/tmp/ipc_application");
-	ipcLog("Got memory at %x slot=%d\n",ipc_dict,ipc_slot);
+	ipcLog("Shared Memory at %x slot=%d\n",ipc_dict,ipc_slot);
 
 	ipc_dict[ipc_slot].pid=pid;
 	ipc_dict[ipc_slot].type=P_ROOT;
@@ -129,16 +129,14 @@ int pid=getpid();
 	}
 
 	// set signal handlers
-	signal(SIGINT ,SIG_IGN);
-	signal(SIGTERM,ipcTerminate);
-	signal(SIGCLD ,checkDeath);
-	signal(SIGALRM,timeout);
+	signal(SIGTERM,sigTerminate);
+	signal(SIGCLD ,sigDeadChild);
 
 	for(;;) // until we get SIGTERM
 	{
-		/* wait for messages or signals */
+		// wait for messages or signals
 		msg=recvMessage(msqid, pid);
-		ipcLog("Got Message from %d [%s] \n",msg->rsvp,msg->text);
+		ipcLog("Message from %d [%s] \n",msg->rsvp,msg->text);
 	}
 }
 
