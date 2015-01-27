@@ -16,6 +16,7 @@ static int
 , fd
 , avr_test
 , avr_dlev
+, slot
 , avrWrite(int, int, BYTE *)
 ;
 
@@ -23,10 +24,7 @@ pid_t
   pid
 , ppid
 , cpid
-, slot
 ;
-
-static IPC_DICT *dict;
 
 static char
   *device = "ttyATH0"
@@ -48,6 +46,8 @@ static char
 , fn[40]
 , ib[80]
 ;
+
+static IPC_DICT *dict;
 
 void // signal handler
 ttyTerminate(int sig)
