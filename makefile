@@ -12,6 +12,8 @@
 	$(CC) -c $(CFLAGS) -D_GNU_SOURCE $< -o $@
 
 DFLAGS=-D_GNU_SOURCE
+CFLAGS=-O
+
 BIN=/home/yun/bin/
 #determine which sqlite3 library to use
 CPU=$(shell uname -m)
@@ -38,11 +40,13 @@ AVR_INIT =avr_init.o   avr_ipc.o avr_log.o avr_daemon.o
 AVR_TTY  =avr_tty.o    avr_ipc.o avr_log.o
 AVR_LITE =avr_sqlite.o avr_ipc.o avr_log.o
 AVR_SHELL=avr_shell.o  avr_ipc.o avr_log.o
+AVR_MON  =avr_mon.o    avr_ipc.o avr_log.o
 
 all: $(BIN)avr_tty \
 $(BIN)avr_init \
 $(BIN)avr_sqlite \
-$(BIN)avr_shell 
+$(BIN)avr_shell \
+$(BIN)avr_mon 
 
 $(AVR_INIT) $(AVR_TTY) $(AVR_LITE) $(AVR_SHELL) : avr.h
 
@@ -62,7 +66,12 @@ $(BIN)avr_sqlite: $(AVR_LITE)
 	strip $@
 
 $(BIN)avr_shell: $(AVR_SHELL)
-	cc $(IFLAGS) $(AVR_SHELL) $(LDFLAGS) -s -o$@
+	cc $(IFLAGS) $(AVR_SHELL) $(LDFLAGS) -o$@
+	chmod 4755 $@
+	strip $@
+
+$(BIN)avr_mon: $(AVR_MON)
+	cc $(IFLAGS) $(AVR_MON) $(LDFLAGS)  -lncurses -o$@
 	chmod 4755 $@
 	strip $@
 
@@ -81,3 +90,12 @@ vi:
 clean:
 	-rm ../log/*
 	-rm *.o
+
+status:
+	git status
+
+stat:
+	git status
+
+commit:
+	git commit -a

@@ -14,7 +14,8 @@
 ** if only 10 were ever used
 */
 
-#define TRACE ipcLog("PID: %d FN: %s LN:%d\n",getpid(),__FILE__,__LINE__);
+//#define TRACE ipcLog("PID: %d FN: %s LN:%d\n",getpid(),__FILE__,__LINE__);
+#define TRACE fprintf(stderr,"PID: %d FN: %s LN:%d\n",getpid(),__FILE__,__LINE__);
 
 #define MAX_IPC		5
 
@@ -35,17 +36,31 @@
 ** so that the processes can 'peek' at
 ** each other
 */
+
 typedef struct 
 {
-	pid_t pid;
-	int   type;
-	int   online;
-	char  stype[21];
-	char  ibc_buf[255];
+	pid_t pid;				// process id of group member
+	int   type;				// process type, P_ROOT, P_SQLITE, etc.
+	int   online;			// startup time
+	char  stype[21];		// string representation of process type
+	char  ibc_buf[256];		// utiliy buffers for messaging, etc;
 }IPC_DICT
 ;
 
 extern IPC_DICT *ipc_dict;
+
+typedef struct 
+{
+	IPC_DICT *dict;			// pointer to ipc_dict
+	pid_t proot;			// pid of root process
+	int   procs;			// array of process numbers
+	int   txmsg;			// number of messages transmited
+	int   rxmsg;			// number of messages recieved
+}IPC_HEAD
+;
+
+extern IPC_HEAD *ipc_head;
+
 
 /* The IPC message queue buffer
 ** Remember, char[] is a block of raw memory bytes.

@@ -9,8 +9,7 @@ int
 , slot
 ;
 
-extern IPC_DICT *ipc_dict;
-
+IPC_HEAD *ipc_head;
 IPC_DICT *ipc_dict;
 
 // Common Exit Point for all processes
@@ -132,7 +131,7 @@ int sz, flags=0;
 	if(ptype==P_ROOT) flags=IPC_CREAT|0666;
 
 	/* get enough shared memory for MAX_IPC Links (devined in avr.h)*/
-	sz=sizeof(IPC_DICT)*MAX_IPC;
+	sz=sizeof(IPC_DICT)*MAX_IPC+sizeof(IPC_HEAD);
 
 	//ipcLog("shmget(key=%d,bytes=%d,flags=%x) token=%s\n",key,sz,flags,token);
 
@@ -160,7 +159,17 @@ int sz, flags=0;
 	}
 
 	// cast memory as an array of IPC_DICT structures
+	sz-=sizeof(IPC_DICT);
 	ipc_dict=(IPC_DICT *)mem;
+	ipc_head=(IPC_HEAD *)&mem[sz];
+	if(ptype==P_ROOT)
+	{
+		ipc_head->proot=pid;
+	}
+
+	ipcLog("head-root : %d\n",ipc_head->proot);
+	ipcLog("head-txmsg: %d\n",ipc_head->txmsg);
+	ipcLog("head-rxmsg: %d\n",ipc_head->rxmsg);
 
 	return 0;
 }
@@ -263,6 +272,7 @@ ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
 			// don't let intrrupted system call screw us
 			if(errno!=EINTR) return errno;
 		}
+		ipc_head->txmsg++;
 		return 0;
 	}
 }
@@ -332,6 +342,7 @@ ipcRecvMessage(int msqid, pid_t pid)
 			// don't let intrrupted system call screw us
 			if(errno!=EINTR) return NULL;
 		}
+		ipc_head->rxmsg++;
 		return &msg;
 	}
 }

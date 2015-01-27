@@ -144,6 +144,10 @@ doMessageCommand()
 IPC_DICT *d;
 int ix=0;
 char buf[81];
+	printf("root: %d\n",ipc_head->proot);
+	printf("txmsg: %d\n",ipc_head->txmsg);
+	printf("rxmsg: %d\n\n",ipc_head->rxmsg);
+
 	printf("--Choices--\n");
 	for(ix=0; ix<MAX_IPC; ix++)
 	{
