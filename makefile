@@ -92,10 +92,10 @@ clean:
 	-rm *.o
 
 status:
-	git status
+	@git status
 
 stat:
-	git status
+	@git status
 
 commit:
-	git commit -a
+	@git commit -a
