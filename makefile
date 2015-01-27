@@ -1,50 +1,82 @@
-.SUFFIXES: .c .ec
-.ec.c:
-	esql -e $<
+#
+# We must define _GNU_SOURCE to get some of the
+# msgctl structes and flags to work see: man 2 msgctl
+# for details
+#
+# chmod 4755 forces setuid in permissions so that
+# the executable runs as user yun.
+#
+# strip the executable to save space on the yun
+#
+.c.o:
+	$(CC) -c $(CFLAGS) -D_GNU_SOURCE $< -o $@
 
-#CINC=-I/export/development/hil/src/inc -I/opt/informix/inf7.30.uc9/incl/esql -I/export/home/hil/src/inc
-#DLIB=-L../lib -lfm -lcurses
-SQLITE_LIB=/usr/lib/libsqlite3.so.0
-#CFLAGS=$(CINC) -g 
-CFLAGS=
-
+DFLAGS=-D_GNU_SOURCE
 BIN=/home/yun/bin/
+#determine which sqlite3 library to use
+CPU=$(shell uname -m)
+ifeq "$(CPU)" "i686"
+	SQLITE_LIB=-lsqlite3
+else
+	SQLITE_LIB=-lsqlite3 -ldl -lpthread
+endif
+$(info $(CPU))
+$(info SQLITE_LIB: $(SQLITE_LIB))
 
-PRI_OBJS=avr_init.o avr_ipc.o avr_log.o avr_daemon.o
-AVR_OBJS=avr_tty.o avr_ipc.o avr_log.o
-AVR_STAT=avr_stat.o avr_memory.o avr_log.o
-AVR_SQLITE=avr_sqlite.o avr_ipc.o avr_log.o
-MON_OBJS=avr_mon.o avr_memory.o avr_log.o
-LOD_OBJS=avr_load.o avr_memory.o avr_log.o
+#ifdef CATEGORY
+#Linux gizmo.heggood.com 3.17.8-300.fc21.i686+PAE #1 SMP Thu Jan 8 23:49:59 UTC 2015 i686 i686 i386 GNU/Linux
+#ifdef TEST
+#$(CATEGORY):
+#    whatever
+#else
+#$(info TEST not defined)
+#else
+#$(info CATEGORY not defined)
+#endif
 
-all: $(BIN)avr_tty $(BIN)avr_init $(BIN)avr_sqlite
+AVR_INIT =avr_init.o   avr_ipc.o avr_log.o avr_daemon.o
+AVR_TTY  =avr_tty.o    avr_ipc.o avr_log.o
+AVR_LITE =avr_sqlite.o avr_ipc.o avr_log.o
+AVR_SHELL=avr_shell.o  avr_ipc.o avr_log.o
 
-$(AVR_PUMP) $(MON_OBJS) $(PRI_OBJS) $(AVR_OBJS): avr.h
+all: $(BIN)avr_tty \
+$(BIN)avr_init \
+$(BIN)avr_sqlite \
+$(BIN)avr_shell 
 
-$(BIN)avr_tty: $(AVR_OBJS)
-	cc $(IFLAGS) $(AVR_OBJS) $(LDFLAGS) -o$@
+$(AVR_INIT) $(AVR_TTY) $(AVR_LITE) $(AVR_SHELL) : avr.h
+
+$(BIN)avr_init: $(AVR_INIT)
+	cc $(IFLAGS) $(AVR_INIT) $(LDFLAGS) -o$@
 	chmod 4755 $@
+	strip $@
 
-$(BIN)avr_load: $(LOD_OBJS)
-	cc $(IFLAGS) $(LOD_OBJS) $(LDFLAGS) -o$@
+$(BIN)avr_tty: $(AVR_TTY)
+	cc $(IFLAGS) $(AVR_TTY) $(LDFLAGS) -o$@
 	chmod 4755 $@
+	strip $@
 
-$(BIN)avr_mon: $(MON_OBJS)
-	cc $(IFLAGS) $(MON_OBJS) $(LDFLAGS) -s -o$@
-
-$(BIN)avr_init: $(PRI_OBJS)
-	cc $(IFLAGS) $(PRI_OBJS) $(LDFLAGS) -o$@
+$(BIN)avr_sqlite: $(AVR_LITE)
+	cc $(IFLAGS) $(AVR_LITE) $(SQLITE_LIB) $(LDFLAGS) -o$@
 	chmod 4755 $@
+	strip $@
 
-$(BIN)avr_sqlite: $(AVR_SQLITE)
-	cc $(IFLAGS) $(AVR_SQLITE) -L/usr/lib -lsqlite3 $(LDFLAGS) -o$@
+$(BIN)avr_shell: $(AVR_SHELL)
+	cc $(IFLAGS) $(AVR_SHELL) $(LDFLAGS) -s -o$@
 	chmod 4755 $@
+	strip $@
+
+test: test.c
+	cc $? -o $@
 
 run:
 	avr_init
 
 kill:
 	pkill avr_init
+
+vi:
+	vi ../log/*
 
 clean:
 	-rm ../log/*

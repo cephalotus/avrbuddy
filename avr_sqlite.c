@@ -5,11 +5,17 @@ static IPC_DICT *dict;
 static sqlite3 *db;
 static char *zErrMsg;
 
-static int
+int slot ;
+pid_t
   pid
 , ppid
-, slot
 ;
+
+// this can be changed with a command line aruement
+// i.e avr_yun /tmp/tmp.db
+static char *yundb="/home/yun/lib/yun.db";
+
+extern IPC_DICT *ipc_dict;
 
 void // signal handler
 dbDterminate(int sig)
@@ -17,7 +23,7 @@ dbDterminate(int sig)
 	ipcLog("SQLITE Terminiate Request! SIG: %s\n",ipcSigName(sig));
 	if(zErrMsg) sqlite3_free(zErrMsg);
 	if(db)      sqlite3_close(db);
-	ipcExit(0,sig);
+	ipcExit(getpid(),0,sig);
 }
 
 typedef int (*sqlite3_callback)
@@ -46,13 +52,14 @@ main(int argc, char* argv[])
 {
 	int rc;
 	char *sql;
-	const char *yundb="/home/yun/lib/yun.db";
 	const char *data = "Callback function called";
+	char buf[81];
 	MSG_BUF *msg;
 
 	signal(SIGINT,SIG_IGN);
 	signal(SIGTERM,dbDterminate);
 
+	// set thes globally
 	ppid=getppid(); 
 	pid=getpid();
 
@@ -61,34 +68,51 @@ main(int argc, char* argv[])
 
 	ipcLog("Starting P_SQLITE process!\n");
 
+	if(argc==2) 
+	{
+		yundb=argv[1];
+		ipcLog("Set database [%s] from argv[1]\n",yundb);
+	}
+	else
+	{
+		ipcLog("No Database specified!\n");
+		ipcLog("Using default database [%s]\n",yundb);
+	}
+
 	/* pick up shared memory environment */
-	slot=getSharedMemory(P_SQLITE,"/tmp/ipc_application");
-	ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
+	slot=ipcGetSharedMemory(pid,P_SQLITE,"/tmp/ipc_application");
+	//ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
-	msqid=getMessageQueue(P_SQLITE,"/tmp/ipc_application");
+	msqid=ipcGetMessageQueue(pid,P_SQLITE,"/tmp/ipc_application");
 
 	// tell root process we are here
-	initNotify(msqid);
-
-	ipcLog("SQLITE Process %d On-Line in slot %d\n", pid, slot);
+	ipcNotify(pid,msqid);
 
 	if((rc=sqlite3_open(yundb, &db))!=0)
 	{
 		ipcLog("Can't open database: %s\n", sqlite3_errmsg(db));
-		dbDterminate(SIGTERM);
+		sprintf(buf,"Process %d Slot %d %s"
+		, pid
+		, slot
+		, sqlite3_errmsg(db)
+		);
+
+		ipcLog("Processing Cannot Continue, Waiting to be killed...\n");
+
+		// send message to ROOT
+		ipcLog("FAIL=%d\n",C_FAIL);
+		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
+		// wait for ROOT to kill us
+		pause();
 	}
 
 	ipcLog("Opened %s successfully\n",yundb);
 
-	// set signal handlers
-	signal(SIGINT ,SIG_IGN);
-	signal(SIGTERM,dbDterminate);
-
 	for(;;) // until we get SIGTERM
 	{
 		/* wait for messages or signals */
-		msg=recvMessage(msqid, pid);
+		msg=ipcRecvMessage(msqid, pid);
 
 		ipcLog("Message from %d [%s] \n",msg->rsvp,msg->text);
 

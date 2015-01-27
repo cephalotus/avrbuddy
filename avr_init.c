@@ -7,23 +7,25 @@ int
 static int 
   prog_cnt
 , event_id
-, prog_id[25]
 , ipc_slot
 ;
 
-char 
-  **split(char *s, char k)
-,  *libdir="/home/yun/lib";
-;
+static pid_t pid;
+
+IPC_DICT *ipc_dict;
+
+char *libdir="/home/yun/lib";
+
+pid_t startChildProcess(char **a);
 
 void // signal handler
 sigDeadChild(int sig)
 {
-int status; pid_t pid;
-	if((pid=wait(&status))>0)
+int status; pid_t cpid;
+	if((cpid=waitpid(cpid,&status,WNOHANG))>0)
 	{
-		ipcLog("Child %d is Dead\n",pid);
-		ipcSlotClear(pid);
+		ipcLog("Child %d is Dead\n",cpid);
+		ipcClearSlot(cpid);
 	}
 
 	// reset the signal
@@ -34,9 +36,9 @@ void // signal handler
 sigTerminate(int sig)
 {
 int status, slot, kflag;
-pid_t pid;
+pid_t cpid;
 
-	ipcLog("Init Proc %d Terminiate Requestd! SIG: %s\n",getpid(),ipcSigName(sig));
+	ipcLog("Init Proc %d Terminiate Requestd! SIG: %s\n",pid,ipcSigName(sig));
 
 	// kill all processes in the application group, 
 	// 0 is me, so start at slot number 1
@@ -46,16 +48,16 @@ pid_t pid;
 		if(!ipc_dict[slot].pid) continue;
 		kflag++;
 
-		pid=ipc_dict[slot].pid;
+		cpid=ipc_dict[slot].pid;
 
-		ipcLog("Killing Child Process %d in Ipc Slot %d\n",pid,slot);
+		ipcLog("Killing Child Process %d in Ipc Slot %d\n",cpid,slot);
 
 		// kill and wait to prevent zombie process
-		kill(pid,SIGTERM); 
+		kill(cpid,SIGTERM); 
 
-		if((pid=waitpid(pid,&status,WNOHANG))>0)
+		if((cpid=waitpid(cpid,&status,WNOHANG))>0)
 		{
-			ipcLog("Child %d is Dead\n",pid);
+			ipcLog("Child %d is Dead\n",cpid);
 		}
 	}
 	if(!kflag)
@@ -64,13 +66,16 @@ pid_t pid;
 	}
 
 	ipcLog("Freeing Shared Memory segment\n");
-	shfree();
+	ipcFreeSharedMem(pid);
+
+	ipcLog("Getting Queue Status, id=%d\n",msqid);
+	ipcMessageStatus(msqid);
 
 	ipcLog("Removing Message Queue, id=%d\n",msqid);
-	rm_queue(msqid);
+	ipcRemoveMsgQueue(msqid);
 
 	// we should be the last one standing.
-	ipcExit(0,0);
+	ipcExit(pid,0,0);
 }
 
 main(char **ac, int av)
@@ -84,7 +89,7 @@ int pid=getpid();
 
 	logOpen("init");
 
-	ipcLog("Starting Avr Application Group!\n");
+	ipcLog("PID %d Starting Avr Application Group!\n",pid);
 
 	/* divorce ourselves from the process
 	** group that we started in so that
@@ -94,13 +99,10 @@ int pid=getpid();
 	*/
 	daemonize();
 
-	ipc_slot=getSharedMemory(P_ROOT,"/tmp/ipc_application");
+	ipc_slot=ipcGetSharedMemory(pid,P_ROOT,"/tmp/ipc_application");
 	ipcLog("Shared Memory at %x slot=%d\n",ipc_dict,ipc_slot);
 
-	ipc_dict[ipc_slot].pid=pid;
-	ipc_dict[ipc_slot].type=P_ROOT;
-
-	msqid=getMessageQueue(P_ROOT,"/tmp/ipc_application");
+	msqid=ipcGetMessageQueue(pid,P_ROOT,"/tmp/ipc_application");
 
 	sprintf(fn,"%s/avr.config",libdir);
 
@@ -121,9 +123,8 @@ int pid=getpid();
 
 			// we have a process to start
 			ib[strlen(ib)-1]='\0';
-			aa=split(ib,' ');
-
-			startAvr(aa,&prog_id[prog_cnt++]);
+			aa=ipcSplit(ib,' ');
+			startChildProcess(aa);
 		}
 		fclose(fp);
 	}
@@ -134,13 +135,43 @@ int pid=getpid();
 
 	for(;;) // until we get SIGTERM
 	{
+	IPC_DICT *d;
+	int status, cslot;
+	pid_t cpid;
+
+		//ipcLog("Waiting for Message\n");
 		// wait for messages or signals
-		msg=recvMessage(msqid, pid);
-		ipcLog("Message from %d [%s] \n",msg->rsvp,msg->text);
+		msg=ipcRecvMessage(msqid, pid);
+
+		// point to sender's dictionary entry
+		d=&ipc_dict[msg->slot];
+
+		// compute slot number
+		cslot=d-ipc_dict;
+
+		ipcLog("Message from:%d  Slot:%d type:%s cmd: %s msg:%s\n"
+		, msg->rsvp
+		, cslot
+		, d->stype
+		, msg->scmd
+		, msg->text
+		);
+		switch(msg->cmd)
+		{
+		case C_FAIL :
+			ipcLog("Pid %d Failed, killing process!\n",msg->rsvp);
+			kill(msg->rsvp,SIGTERM);
+			if((cpid=waitpid(msg->rsvp,&status,WNOHANG))>0)
+			{
+				ipcLog("Child %d is Dead\n",msg->rsvp);
+				ipcClearSlot(cpid);
+			}
+		}
 	}
 }
 
-startAvr(char **a, int *id)
+pid_t
+startChildProcess(char **a)
 {
 int i ,l ,qsize;
 pid_t fk;
@@ -169,7 +200,6 @@ static char
 	}
 
 	wb[l-1]='\0';
-	ipcLog("Starting up [%s]\n",wb);
 
 	ipcLog("PROG: %s\n",prog);
 
@@ -178,9 +208,10 @@ static char
 		ipcLog("ARG: %s\n",a[i]);
 	}
 
-	switch((*id=fk=fork()))
+	switch(fk=fork())
 	{
 		case -1:
+			ipcLog("Starting up [%s]\n",wb);
 			ipcLog("Fork Failed !! THE END !\n"); 
 			break;
 
@@ -194,6 +225,7 @@ static char
 			kill(fk,SIGTERM);
 
 		default:
+			ipcLog("Started up [%s] as pid: %d\n",wb,fk);
 			break;
 	}
 
@@ -201,28 +233,6 @@ static char
 	** let things stabilize a bit
 	*/
 	sleep(1);
+	return fk;
 }
 
-char ** // split string into an array
-split(char *s, char k)
-{
-	/* maximum of 25 list items */
-	static char *av[25]; 
-	int i=0;
-
-	while(*s && i<25)
-	{
-		av[i++]=s;
-		while(*s && *s!=k)
-		{
-			if(*s=='"'){
-				for(s++; *s && *s!='"'; s++)
-				;;
-			}
-			s++;
-		}
-		while(*s && *s==k) *(s++)='\0';
-	}
-	av[i]=NULL;
-	return(av);
-}

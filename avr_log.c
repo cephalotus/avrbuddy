@@ -87,17 +87,39 @@ logClose()
 	fp=NULL;
 }
 
+void
+ipcLogErrorWait(pid_t pid, const char*format,...)
+{
+va_list args;
+char buf[256];
+	va_start(args,format); 
+	vsprintf(buf,format,args);
+	va_end(args);
+
+	// send message to ROOT
+	ipcLog("ERROR_WAIT: ipcSendMessage(pid=%d, msqid=%d,ipc_dict[0].pid=%d,C_FAIL,buf=%s)\n"
+	, pid
+	, msqid
+	, ipc_dict[0].pid
+	, buf
+	);
+
+	ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
+	// wait to be killed
+	pause();
+}
+
 int
 ipcDebug(int lev, const char*format,...)
 {
 va_list args;
-char *fmt, tb[256];
+char tb[256];
 	if(ipc_dlev<lev) return(0);
 	if(!fp) return(0);
 	va_start(args,format); 
 	vsprintf(tb,format,args);
-	ipcLog("%s",tb);
 	va_end(args);
+	ipcLog("%s",tb);
 }
 
 int

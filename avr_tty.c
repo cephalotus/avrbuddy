@@ -64,14 +64,13 @@ int x,id;
 
 		ipcLog("Child Process %d died With exit code=%d\n",id,x);
 	}
-	ipcExit(0,0);
+	ipcExit(pid,0,0);
 }
 
 main(int argc, char *argv[])
 {
 char *s;
-int cc, loop_flag;
-register int i;
+int i, cc;
 char tb[128];
 FILE *fp;
 MSG_BUF *msg;
@@ -79,25 +78,38 @@ MSG_BUF *msg;
 	signal(SIGINT,SIG_IGN);
 	signal(SIGTERM,ttyTerminate);
 
-	/* process command line options */
-	getOptions(argv); 
 	ppid=getppid(); 
 	pid=getpid();
 
 	/*set up application logging */
-	logOpen(device);
+	logOpen(basename(device));
 
 	ipcLog("Starting P_TTY process!\n");
 
+
 	/* pick up shared memory environment */
-	slot=getSharedMemory(P_TTY,"/tmp/ipc_application");
-	ipcLog("Got memory at %x slot=%d\n",ipc_dict,slot);
+	slot=ipcGetSharedMemory(pid,P_TTY,"/tmp/ipc_application");
+	//ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
-	msqid=getMessageQueue(P_TTY,"/tmp/ipc_application");
+	msqid=ipcGetMessageQueue(pid,P_TTY,"/tmp/ipc_application");
 
-	// notify root process we are here
-	initNotify(msqid);
+	/* process command line options */
+	if(getOptions(argv)<0)
+	{
+		sprintf(tb,"Process %d Slot %d option error"
+		, pid
+		, slot
+		);
+		ipcLog("Processing Cannot Continue, Waiting to be killed...\n");
+		// send message to ROOT
+		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,tb);
+		// wait for ROOT to kill us
+		pause();
+	}
+
+	// tell root process we are here
+	ipcNotify(pid,msqid);
 
 	ipcLog("TTY Process %d On-Line in slot %d\n"
 	, pid
@@ -107,8 +119,19 @@ MSG_BUF *msg;
 	/* open the comm port */
 	if((fd=devOpen(device))<0)
 	{
+		char buf[81];
 		ipcLog("Can't open %s Error: %s\n",device,strerror(errno));
-		ipcExit(errno,0);
+		sprintf(buf,"Process %d Slot %d %s"
+		, pid
+		, slot
+		, strerror(errno)
+		);
+
+		ipcLog("Processing Cannot Continue, Waiting to be killed...\n");
+		// send message to ROOT
+		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
+		// wait for ROOT to kill us
+		pause();
 	}
 
 	ipcLog("Successfully Opened TTY port=%s speed=%d dlev:%d\n"
@@ -125,7 +148,7 @@ MSG_BUF *msg;
 	{
 		case -1:
 			ipcLog("Can't fork error: %s\n",strerror(errno));
-			ipcExit(errno,0);
+			ipcExit(pid,errno,0);
 
 		case 0:
 			break;
@@ -142,7 +165,7 @@ MSG_BUF *msg;
 	for(;;)
 	{
 		/* wait for messages or signals */
-		msg=recvMessage(msqid, pid);
+		msg=ipcRecvMessage(msqid, pid);
 		ipcLog("Got Message from %d [%s] \n",msg->rsvp,msg->text);
 	}
 }
@@ -188,7 +211,7 @@ char buf[1024];
 
 			// send kill signal to parent process
 			kill(ppid,SIGTERM);
-			ipcExit(errno,0);
+			ipcExit(pid,errno,0);
 		}
 
 		if(x!=1)
@@ -247,13 +270,11 @@ getSpeed(int baud)
 	}
 }
 
-devOpen(char *port)
+devOpen(char *device)
 {
 int fd;
 char dev[80];
 extern int errno;
-
-	sprintf(dev,"/dev/%s",port);
 
 	if(isatty(0) && ioctl(0,TCGETA,&tty))
 	{
@@ -261,7 +282,7 @@ extern int errno;
 		return -1;
 	}
 
-	if((fd=open(dev,O_RDWR|O_NDELAY))<0)
+	if((fd=open(device,O_RDWR|O_NDELAY))<0)
 	{
 		return -1;
 	}
@@ -288,14 +309,17 @@ extern int errno;
 	return(fd);
 }
 
+int
 getOptions(char **av)
 {
 register int i;
+char *opt;
 
 	for(i=1; av[i]; i++)
 	{
 		if(av[i][0]=='-')
 		{
+			opt=av[i];
 			switch(av[i][1])
 			{
 			case 'T':
@@ -337,7 +361,7 @@ register int i;
 				case 4000000	: speed = B4000000;	break;
 				default   		: 
 					ipcLog("%s not a legal speed\n",&av[i][2]);
-					ipcExit(0,0);
+					ipcExit(pid,0,0);
 				}
 				break;
 
@@ -371,9 +395,14 @@ register int i;
 			case 't':
 				vtime=atoi(&av[i][2]);
 				break;
+
+			default:
+				ipcLog("%s not a valid option \n",opt);
+				return -1;
 			}
 		}
 	}
+	return 0;
 }
 
 char *
