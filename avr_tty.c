@@ -52,7 +52,7 @@ static IPC_DICT *dict;
 void // signal handler
 ttyTerminate(int sig)
 {
-int x,id;
+int status;
 	ipcLog("Proc %d TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
 	if(cpid)
 	{
@@ -60,9 +60,11 @@ int x,id;
 		kill(cpid,SIGTERM);
 
 		// don't leave a zombie
-		id=wait(&x);
-
-		ipcLog("Child Process %d died With exit code=%d\n",id,x);
+		if((cpid=waitpid(cpid,&status,WNOHANG))>0)
+		{
+			ipcClearSlot(cpid);
+		}
+		ipcLog("Child Process %d died With exit code=%d\n",cpid,WEXITSTATUS(status));
 	}
 	ipcExit(pid,0,0);
 }
@@ -101,11 +103,7 @@ MSG_BUF *msg;
 		, pid
 		, slot
 		);
-		ipcLog("Processing Cannot Continue, Waiting to be killed...\n");
-		// send message to ROOT
-		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,tb);
-		// wait for ROOT to kill us
-		pause();
+		ipcFatalExit(pid,"Processing Cannot Continue, Waiting to be killed...\n");
 	}
 
 	// tell root process we are here
@@ -127,11 +125,7 @@ MSG_BUF *msg;
 		, strerror(errno)
 		);
 
-		ipcLog("Processing Cannot Continue, Waiting to be killed...\n");
-		// send message to ROOT
-		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
-		// wait for ROOT to kill us
-		pause();
+		ipcFatalExit(pid,"Processing Cannot Continue, Waiting to be killed...\n");
 	}
 
 	ipcLog("Successfully Opened TTY port=%s speed=%d dlev:%d\n"
@@ -148,7 +142,7 @@ MSG_BUF *msg;
 	{
 		case -1:
 			ipcLog("Can't fork error: %s\n",strerror(errno));
-			ipcExit(pid,errno,0);
+			ipcFatalExit(pid,"Can't fork error: %s\n",strerror(errno));
 
 		case 0:
 			break;
@@ -164,7 +158,7 @@ MSG_BUF *msg;
 	*/
 	for(;;)
 	{
-		/* wait for messages or signals */
+		/* Wait for messages or signals */
 		msg=ipcRecvMessage(msqid, pid);
 		ipcLog("Got Message from %d [%s] \n",msg->rsvp,msg->text);
 	}

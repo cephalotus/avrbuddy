@@ -379,6 +379,7 @@ ipcTypeName(int ptype)
 	case	P_TTY 	 : return "P_TTY";
 	case	P_SQLITE : return "P_SQLITE";
 	case	P_SHELL	 : return "P_SHELL";
+	case	P_HTTP	 : return "P_HTTP";
 	default			 : return "???";
 	}
 }

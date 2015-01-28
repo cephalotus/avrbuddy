@@ -99,3 +99,7 @@ stat:
 
 commit:
 	@git commit -a
+
+#https://github.com/cephalotus/avrbuddy.git (ssh)
+github:
+	git push -u origin master

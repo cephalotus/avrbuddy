@@ -32,9 +32,9 @@ sigDeadChild(int sig)
 int status; pid_t cpid;
 	if((cpid=waitpid(cpid,&status,WNOHANG))>0)
 	{
-		ipcLog("Child %d is Dead\n",cpid);
 		ipcClearSlot(cpid);
 	}
+	ipcLog("Child %d is Dead\n",cpid);
 
 	// reset the signal
 	signal(SIGCLD,sigDeadChild);
@@ -44,11 +44,13 @@ void // signal handler
 httpTerminate(int sig)
 {
 int x,id;
-	ipcLog("Proc %d TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
+	ipcLog("Proc %d HTTP Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
+	// if whe have a child, kill it. (not pro-life huh?)
 	if(cpid)
 	{
 		ipcLog("Killing cpid %d\n",cpid);
 		kill(cpid,SIGTERM);
+		// let the interuppt hanldler do the wait part
 		sigDeadChild(15);
 	}
 	ipcExit(pid,0,0);
@@ -85,21 +87,22 @@ IPC_DICT *d;
 
 
 	/* pick up shared memory environment */
-	slot=ipcGetSharedMemory(pid,P_TTY,"/tmp/ipc_application");
+	slot=ipcGetSharedMemory(pid,P_HTTP,"/tmp/ipc_application");
 	d=&ipc_dict[slot];
-	msqid=ipcGetMessageQueue(pid,P_TTY,"/tmp/ipc_application");
+	msqid=ipcGetMessageQueue(pid,P_HTTP,"/tmp/ipc_application");
 	ipcNotify(pid,msqid);
-	ipcLog("TTY Process %d On-Line in slot %d\n",pid,slot);
+	ipcLog("HTTP Process %d On-Line in slot %d\n",pid,slot);
 
 	// set host and port for http requests
 	host_arg="localhost";
-	port_arg=8100;
+	port_arg=800;
 
 	signal(SIGTERM,httpTerminate);
    
 	if((sock=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP))<=0)
 	{
 		ipcLog("tcpio: can't open stream socket error: %s\n",strerror(errno));
+		ipcFatalExit(pid,"tcpio: can't open stream socket error: %s\n",strerror(errno));
 	}
 
 	/* So that we can re-bind to it without TIME_WAIT problems */
@@ -112,6 +115,7 @@ IPC_DICT *d;
 	if(bind(sock,(struct sockaddr*)&addr,sizeof(addr))<0)
 	{
 		ipcLog("LN: %d server: can't bind local address error %s\n",__LINE__,strerror(errno));
+		ipcFatalExit(pid,"LN: %d server: can't bind local address error %s\n",__LINE__,strerror(errno));
 		close(sock);
 		httpTerminate(0);
 	}
@@ -129,6 +133,7 @@ IPC_DICT *d;
 		if((nk=accept(sock,&cli_addr,&clilen))<0)
 		{
 			if(errno==EINTR) continue;
+			ipcFatalExit(pid,"Cant accept socket Error: %s\n",strerror(errno));
 			httpTerminate(EINTR);
 		}
 
@@ -327,16 +332,10 @@ IPC_DICT *d;
 	// current time
 	time(&now);
 
-	// count the avr_links 
-	for(i=avr_cnt=0; i<MAX_IPC; i++){
-		if(ipc_dict[i].pid==0) break;
-		/*
-		printf("slot %d pid %d type %d\n"
-		, i
-		, ipc_dict[i].pid
-		, ipc_dict[i].type
-		);
-		*/
+	// count the active avr_proceses
+	for(i=avr_cnt=0; i<MAX_IPC; i++)
+	{
+		if(ipc_dict[i].pid==0) continue;
 		avr_cnt++;
 	}
 	xml+=sprintf(xml,"<?xml version='1.0' encoding='utf-8' ?>\n");
@@ -347,22 +346,20 @@ IPC_DICT *d;
 	if(!avr_cnt)
 	{
 		xml+=sprintf(xml,"</docRoot>\n");
-		httpTerminate(0);
+		ipcFatalExit(pid,"No Avr Processes found\n");
 	}
 
 	xml+=sprintf(xml," <avrprocs>\n");
 	for(i=0; i<MAX_IPC; i++)
 	{
-		if(ipc_dict[i].pid!=0) break;
-		{
-			d=&ipc_dict[i];
-			xml+=sprintf(xml,"  <avrproc>\n");
-			xml+=sprintf(xml,"   <ipcslot>%d</ipclot>\n",i);
-			xml+=sprintf(xml,"   <procid>%d</procid>\n",ipc_dict[i].pid);
-			xml+=sprintf(xml,"   <proctype>%d</proctype>\n",ipc_dict[i].type);
-			xml+=sprintf(xml,"   <procname>%d</procname>\n",ipc_dict[i].stype);
-			xml+=sprintf(xml,"  </avrproc>\n");
-		}
+		if(!ipc_dict[i].pid) continue;
+		d=&ipc_dict[i];
+		xml+=sprintf(xml,"  <avrproc>\n");
+		xml+=sprintf(xml,"   <ipcslot>%d</ipclot>\n",i);
+		xml+=sprintf(xml,"   <procid>%d</procid>\n",ipc_dict[i].pid);
+		xml+=sprintf(xml,"   <proctype>%d</proctype>\n",ipc_dict[i].type);
+		xml+=sprintf(xml,"   <procname>%d</procname>\n",ipc_dict[i].stype);
+		xml+=sprintf(xml,"  </avrproc>\n");
 	}
 	xml+=sprintf(xml," </avrprocs>\n");
 	xml+=sprintf(xml,"</docRoot>\n");

@@ -54,11 +54,7 @@ pid_t cpid;
 
 		// kill and wait to prevent zombie process
 		kill(cpid,SIGTERM); 
-
-		if((cpid=waitpid(cpid,&status,WNOHANG))>0)
-		{
-			ipcLog("Child %d is Dead\n",cpid);
-		}
+		sigDeadChild(SIGTERM);
 	}
 	if(!kflag)
 	{
@@ -159,13 +155,8 @@ int pid=getpid();
 		switch(msg->cmd)
 		{
 		case C_FAIL :
-			ipcLog("Pid %d Failed, killing process!\n",msg->rsvp);
 			kill(msg->rsvp,SIGTERM);
-			if((cpid=waitpid(msg->rsvp,&status,WNOHANG))>0)
-			{
-				ipcLog("Child %d is Dead\n",msg->rsvp);
-				ipcClearSlot(cpid);
-			}
+			sigDeadChild(SIGTERM);
 		}
 	}
 }

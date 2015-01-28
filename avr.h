@@ -24,6 +24,7 @@
 #define P_TTY		(1<<1)
 #define P_SQLITE	(1<<2)
 #define P_SHELL		(1<<3)
+#define P_HTTP		(1<<4)
 
 /* IPC Command Definitions */
 #define C_LOGIN		(1<<0)

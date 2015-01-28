@@ -88,7 +88,7 @@ logClose()
 }
 
 void
-ipcLogErrorWait(pid_t pid, const char*format,...)
+ipcFatalExit(pid_t pid, const char*format,...)
 {
 va_list args;
 char buf[256];
