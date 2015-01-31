@@ -36,9 +36,9 @@ int x,id;
 
 main(int argc, char *argv[])
 {
-char *s, buf[81];
+char *s, *cmd, *arg, buf[1024];
 FILE *fp;
-MSG_BUF *msg;
+int cnt, c, x, i;
 
 	signal(SIGINT, shellTerminate);
 	signal(SIGTERM,shellTerminate);
@@ -66,37 +66,6 @@ MSG_BUF *msg;
 	, slot
 	);
 
-	switch(cpid=fork())
-	{
-		case -1:
-			ipcLog("Can't fork error: %s\n",strerror(errno));
-			ipcExit(pid,errno,0);
-
-		case 0:
-			break;
-
-		default:
-			beChildProcess();
-			break;
-	}
-
-	// we are now a parent process with a child on the tty receive
-	// our job now is to listen to the message queue for any further
-	// instructions that would have us transmit to the tty
-	//
-	ipcLog("PP: SHELL I am Parent Pid=%d\n",pid);
-	for(;;)
-	{
-		/* wait for messages or signals */
-		msg=ipcRecvMessage(msqid, pid);
-		ipcLog("PP: Got Message from %d [%s] \n",msg->rsvp,msg->text);
-	}
-}
-
-beChildProcess()
-{
-int cnt, c, x, i;
-char buf[1024];
 
 	ipcLog("CP: SHELL I am Child Pid=%d\n",cpid);
 	// we inherited signal traps from parent
@@ -120,13 +89,19 @@ char buf[1024];
 			printf(">> ");
 			fgets(buf, sizeof(buf), stdin);
 			buf[strlen(buf)-1]='\0';
-			if(!strcmp(buf,"exit")) 
+
+			// get command and argument
+			for(cmd=s=buf; *s && *s!=' '; s++)
+			;;
+			*s++='\0';
+			arg=s;
+			if(!strcmp(cmd,"exit")||!strcmp(cmd,"quit"))
 			{
 				printf("Goodbye!\n");
 				shellTerminate(0);
 			}
-			else if(!strcmp(buf,"msg")) 
-				doMessageCommand();
+			else if(!strcmp(cmd,"sql")) 
+				doMessageCommand(C_SQL,arg);
 			else
 				printf("%s\n",buf);
 		}
@@ -139,34 +114,51 @@ char buf[1024];
 }
 
 int
-doMessageCommand()
+doMessageCommand(int cmd, char *arg)
 {
 IPC_DICT *d;
-int ix=0;
-char buf[81];
-	printf("root: %d\n",ipc_head->proot);
-	printf("txmsg: %d\n",ipc_head->txmsg);
-	printf("rxmsg: %d\n\n",ipc_head->rxmsg);
+MSG_BUF *msg;
+int n, id, cslot;
+char com_buf[256];
+	switch(cmd)
+	{
+	case C_SQL:
+		// send a message to the C_SQLITE process
+		id=ipcGetPidByType(P_SQLITE);
+		ipcLog("Send --> from:%d to:%d\n",pid,id);
+		ipcSendMessage(pid, msqid, id, C_SQL, arg);
+		ipcLog("Sent %s to pid:%d\n",arg,id);
+		ipcLog("Waiting for Reply\n");
 
-	printf("--Choices--\n");
-	for(ix=0; ix<MAX_IPC; ix++)
-	{
-		if(!ipc_dict[ix].pid) continue;
-		d=&ipc_dict[ix];
-		printf("%d) %d\t%s\n",ix+1,d->pid,d->stype);
-	}
-	printf("Choose: ");
-	fflush(stdout);
-	fgets(buf,sizeof(buf),stdin);
-	buf[strlen(buf)-1]='\0';
-	ix=atoi(buf);
-	if(ix>0&&ix<MAX_IPC)
-	{
-		printf("You chose pid %d\n",ipc_dict[ix-1].pid);
-		printf("Message: ");
-		fgets(buf,sizeof(buf),stdin);
-		buf[strlen(buf)-1]='\0';
-		printf("You Entered: %s\n",buf);
+		for(;;)
+		{
+			// wait for reply or signal
+			msg=ipcRecvMessage(msqid, pid);
+
+			// point to sender's dictionary entry
+			d=&ipc_dict[msg->slot];
+
+			// compute slot number
+			cslot=d-ipc_dict;
+
+			ipcLog("Message from:%d  Slot:%d type:%s cmd: %s msg:%s\n"
+			, msg->rsvp
+			, cslot
+			, d->stype
+			, msg->scmd
+			, msg->text
+			);
+			switch(msg->cmd)
+			{
+			case C_EOF :
+				printf(">> EOF\n");
+				return 0;
+
+			case C_ACK :
+				printf(">> %s\n",msg->text);
+				break;
+			}
+		}
 	}
 }
 

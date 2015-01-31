@@ -46,13 +46,11 @@ int ix, sz;
 	// scan the dictionary for a spare slot, loop will break on vacant slot (pid=0)
 	for(ix=0; ix<MAX_IPC && ipc_dict[ix].pid; ix++)
 	{
-		;;
-		/*
 		ipcLog("Busy IPC Slot %d Type:%s Pid:%d\n"
 		, ix
 		, ipc_dict[ix].stype
-		, ipc_dict[ix].pid);
-		*/
+		, ipc_dict[ix].pid
+		);
 	}
 
 	if(ix==MAX_IPC)
@@ -70,7 +68,7 @@ int ix, sz;
 	ipc_dict[slot].online=time(0);
 	strcpy(ipc_dict[slot].stype,ipcTypeName(ptype));
 
-	ipcLog("Found Vacant IPC Slot %d Pid:%d Type:%s\n"
+	ipcLog("Acquired Vacant IPC Slot %d Pid:%d Type:%s\n"
 	, slot
 	, ipc_dict[slot].pid
 	, ipc_dict[slot].stype
@@ -252,16 +250,13 @@ ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
 	strcpy(msg.scmd,ipcCmdName(cmd));
 	strcpy(msg.text,txt);
 
-	/*
-	ipcLog("SEND ADDR: %d msgsnd(msqid=%d,msg=%x,len=%d,msgflg=%d, cmd:%d)\n"
-	, mtype
-	, msqid
-	, msg
-	, msg.len
-	, msgflg
-	, cmd
-	);
-	*/
+
+	ipcLog("Send TO_ADDR: %d FROM_ADDR: %d\n",mtype,msg.rsvp);
+	ipcLog("msqid %d\n",msqid);
+	ipcLog("msg.len %d\n",msg.len);
+	ipcLog("msgflg %d\n",msgflg);
+	ipcLog("msg.scmd %s\n",msg.scmd);
+	ipcLog("msg.text %s\n",msg.text);
 
 	for(;;) 
 	{
@@ -322,16 +317,14 @@ ipcRecvMessage(int msqid, pid_t pid)
 	size_t size=sizeof(msg)-sizeof(long);
 	int msgflg=0;  // may add later if need for selective IPC_NOWAIT arises
 
-	/*
-	ipcLog("RECV ADDR: %d msgrcv(msqid=%d,msg=%x,size=%d,mtype=%d,msgflg=%d)\n"
-	, mtype
+	ipcLog("RSVP_ADDR: %d msgrcv(msqid=%d,msg=%x,size=%d,mtype=%d,msgflg=%d)\n"
+	, pid
 	, msqid
 	, msg
 	, size
-	, mtype
+	, pid
 	, msgflg
 	);
-	*/
 
 	for(;;) 
 	{
@@ -342,6 +335,9 @@ ipcRecvMessage(int msqid, pid_t pid)
 			// don't let intrrupted system call screw us
 			if(errno!=EINTR) return NULL;
 		}
+		ipcLog("Message From: %d  Command: %s\n",msg.rsvp,ipcCmdName(msg.cmd));
+
+		// increment system message receive count
 		ipc_head->rxmsg++;
 		return &msg;
 	}
@@ -392,8 +388,13 @@ ipcCmdName(int cmd)
 	case C_LOGIN	: return "C_LOGIN";
 	case C_LOGOUT	: return "C_LOGOUT";
 	case C_FAIL		: return "C_FAIL";
+	case C_PING		: return "C_PING";
+	case C_ACK		: return "C_ACK";
+	case C_NAK		: return "C_NAK";
+	case C_EOF		: return "C_EOF";
+	case C_SQL		: return "C_SQL";
+	default			: return "C_UNKN";
 	}
-	return "C_UNKN";
 }
 
 char *

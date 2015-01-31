@@ -38,7 +38,7 @@ sigTerminate(int sig)
 int status, slot, kflag;
 pid_t cpid;
 
-	ipcLog("Init Proc %d Terminiate Requestd! SIG: %s\n",pid,ipcSigName(sig));
+	ipcLog("Init Proc %d Terminiate Requested! SIG: %s\n",pid,ipcSigName(sig));
 
 	// kill all processes in the application group, 
 	// 0 is me, so start at slot number 1

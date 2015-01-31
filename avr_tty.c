@@ -2,6 +2,8 @@
 #include <termio.h>
 #include <fcntl.h>
 
+#define AVR_ECHO 1
+
 /* values that are set to defaults
 ** can be changed with command line
 ** options
@@ -23,7 +25,6 @@ static int
 pid_t
   pid
 , ppid
-, cpid
 ;
 
 static char
@@ -32,20 +33,8 @@ static char
 , *hexString()
 , errmsg[512]
 ;
-static BYTE
-  com_buf[256]
-, sav_buf[256]
-, *read_hil()
-, getSum()
-;
 
 static struct termio tty;
-
-static char
-  *libdir
-, fn[40]
-, ib[80]
-;
 
 static IPC_DICT *dict;
 
@@ -54,6 +43,7 @@ ttyTerminate(int sig)
 {
 int status;
 	ipcLog("Proc %d TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
+	/*
 	if(cpid)
 	{
 		ipcLog("Killing cpid %d\n",cpid);
@@ -66,16 +56,18 @@ int status;
 		}
 		ipcLog("Child Process %d died With exit code=%d\n",cpid,WEXITSTATUS(status));
 	}
+	*/
 	ipcExit(pid,0,0);
 }
 
 main(int argc, char *argv[])
 {
-char *s;
-int i, cc;
-char tb[128];
-FILE *fp;
+char *s, *cmd, *arg;
+int i, n, status, cslot;
+char com_buf[256];
 MSG_BUF *msg;
+BYTE c;
+IPC_DICT *d;
 
 	signal(SIGINT,SIG_IGN);
 	signal(SIGTERM,ttyTerminate);
@@ -88,10 +80,9 @@ MSG_BUF *msg;
 
 	ipcLog("Starting P_TTY process!\n");
 
-
 	/* pick up shared memory environment */
 	slot=ipcGetSharedMemory(pid,P_TTY,"/tmp/ipc_application");
-	//ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
+	ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
 	msqid=ipcGetMessageQueue(pid,P_TTY,"/tmp/ipc_application");
@@ -99,7 +90,7 @@ MSG_BUF *msg;
 	/* process command line options */
 	if(getOptions(argv)<0)
 	{
-		sprintf(tb,"Process %d Slot %d option error"
+		sprintf(com_buf,"Process %d Slot %d option error"
 		, pid
 		, slot
 		);
@@ -117,9 +108,8 @@ MSG_BUF *msg;
 	/* open the comm port */
 	if((fd=devOpen(device))<0)
 	{
-		char buf[81];
 		ipcLog("Can't open %s Error: %s\n",device,strerror(errno));
-		sprintf(buf,"Process %d Slot %d %s"
+		sprintf(com_buf,"Process %d Slot %d %s"
 		, pid
 		, slot
 		, strerror(errno)
@@ -128,78 +118,21 @@ MSG_BUF *msg;
 		ipcFatalExit(pid,"Processing Cannot Continue, Waiting to be killed...\n");
 	}
 
-	ipcLog("Successfully Opened TTY port=%s speed=%d dlev:%d\n"
-	, device
-	, getSpeed(speed)
-	, avr_dlev);
+	ipcLog("Successfully Opened TTY port=%s speed=%d dlev:%d\n",device,getSpeed(speed),avr_dlev);
 
-	/* point to our library directory */
-	libdir="/tmp";
-
-	cc=0;
-	/* ask for heartbeat early on */
-	switch(cpid=fork())
-	{
-		case -1:
-			ipcLog("Can't fork error: %s\n",strerror(errno));
-			ipcFatalExit(pid,"Can't fork error: %s\n",strerror(errno));
-
-		case 0:
-			break;
-
-		default:
-			beChildProcess();
-			break;
-	}
-
-	/* we are now a parent process with a child on the tty receive
-	** our job now is to listen to the message queue for any further
-	** instructions that would have us transmit to the tty
-	*/
-	for(;;)
-	{
-		/* Wait for messages or signals */
-		msg=ipcRecvMessage(msqid, pid);
-		ipcLog("Got Message from %d [%s] \n",msg->rsvp,msg->text);
-	}
-}
-
-int
-avrWrite(int fd, int cnt, BYTE *s)
-{
-int cc;
-	if((cc=write(fd,s,cnt))<cnt)
-	{
-		//Uh-Oh!
-		ipcLog("Serial Write Error: %s\n",strerror(errno));
-	}
-	return cc;
-}
-
-beChildProcess()
-{
-int cnt, c, x, i;
-char buf[1024];
 
 	// we inherited signal traps from parent
 
-	for(i=0;;i++)
+	for(i=0;;)
 	{
-		// don't allow buffer over-run
-		if(i==1023)
-		{
-
-			buf[i]='\0';
-			buf[--i]='\n';
-			ipcLog("Serial Over-run Line: [%s]\n",buf);
-			i=-1;
-			continue;
-		}
-
 		// read 1 byte
-		if((c=read(fd,&buf[i],1))<0)
+		if((n=read(fd,&c,1))<0)
 		{
-			if(errno==EINTR) { i--; continue; }
+			if(errno==EINTR) 
+			{
+				ipcLog("EINTR \n");
+				continue; 
+			}
 			//Uh-Oh!
 			ipcLog("Serial Read Error: %s\n",strerror(errno));
 
@@ -208,29 +141,96 @@ char buf[1024];
 			ipcExit(pid,errno,0);
 		}
 
-		if(x!=1)
+		ipcLog(">> [%02d][%02x][%c]\n",i,c,c);
+
+		if(c=='\r') continue;
+		if(c=='\n')
 		{
-			if(x>=0) ipcLog("wanted 1 saw %d\n",x);
-			i--;
-			continue;
-		}
+			// terminate the string
+			com_buf[i]='\0';
 
-		// we have a character
-		switch(buf[i])
+/*
+			ipcLog(">> [%s]\n",com_buf);
+*/
+			// we will put some code in here to implement protocol for avr sketches
+			// ok, we have a request.
+
+			// look for first space to split command and agument
+			for(cmd=s=com_buf; *s && *s !=' '; s++)
+			;;
+			*s++='\0'; // terminate command string;
+
+			arg=s;
+			ipcLog("<< Command:[%s] Arg:[%s]\n",cmd,arg);
+
+			if(!strcmp(cmd,"C_PING"))
+			{
+
+				n=sprintf(com_buf,"C_ACK\n");
+				n=avrWrite(fd,n,com_buf);
+				ipcLog("Sent %d bytes to avr\n",n);
+			}
+
+			if(!strcmp(cmd,"C_SQLITE"))
+			{
+				// send a message to the C_SQLITE process
+				int id=ipcGetPidByType(P_SQLITE);
+				ipcLog("Send --> from:%d to:%d\n",pid,id);
+				ipcSendMessage(pid, msqid, id, C_SQL, arg);
+				ipcLog("Sent %s to pid:%d\n",arg,id);
+				ipcLog("Waiting for Reply\n");
+
+				// wait for reply or signal
+				msg=ipcRecvMessage(msqid, pid);
+
+				// point to sender's dictionary entry
+				d=&ipc_dict[msg->slot];
+
+				// compute slot number
+				cslot=d-ipc_dict;
+
+				ipcLog("Message from:%d  Slot:%d type:%s cmd: %s msg:%s\n"
+				, msg->rsvp
+				, cslot
+				, d->stype
+				, msg->scmd
+				, msg->text
+				);
+				switch(msg->cmd)
+				{
+				case C_EOF :
+					break;
+
+				case C_ACK :
+					n=sprintf(com_buf,"msg->text\n");
+					n=avrWrite(fd,n,com_buf);
+					ipcLog("Sent %d bytes to avr\n",n);
+					break;
+				}
+			}
+
+			// start a new string
+			i=0;
+		}
+		else
 		{
-		case '\n':	//end of line?
-			buf[i]='\0';
-			i=-1; // for() will increment it to 0
-			ipcLog("Serial Read Line: [%s]\n",buf);
-			break;
-
+			// save char in buffer
+			com_buf[i++]=c;
 		}
-		// we should put some code in here
-		// to implement protocol for avr sketches
-		//ipcDebug(50,"<<[%02d]< %02x\n",i,buf[i]);
-
-		ipcLog("<<[%02d]< %02x\n",i,buf[i]);
 	}
+}
+
+int
+avrWrite(int fd, int cnt, BYTE *buf)
+{
+int cc;
+	ipcLog("+%02d >> %s",cnt,buf);
+	if((cc=write(fd,buf,cnt))<cnt)
+	{
+		//Uh-Oh!
+		ipcLog("Serial Write Error: %s\n",strerror(errno));
+	}
+	return cc;
 }
 
 getSpeed(int baud)

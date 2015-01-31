@@ -20,21 +20,11 @@ CPU=$(shell uname -m)
 ifeq "$(CPU)" "i686"
 	SQLITE_LIB=-lsqlite3
 else
-	SQLITE_LIB=-lsqlite3 -ldl -lpthread
+	SQLITE_LIB=/usr/lib/libsqlite3.a -ldl -lpthread
 endif
-$(info $(CPU))
-$(info SQLITE_LIB: $(SQLITE_LIB))
+#$(info $(CPU))
+#$(info SQLITE_LIB: $(SQLITE_LIB))
 
-#ifdef CATEGORY
-#Linux gizmo.heggood.com 3.17.8-300.fc21.i686+PAE #1 SMP Thu Jan 8 23:49:59 UTC 2015 i686 i686 i386 GNU/Linux
-#ifdef TEST
-#$(CATEGORY):
-#    whatever
-#else
-#$(info TEST not defined)
-#else
-#$(info CATEGORY not defined)
-#endif
 
 AVR_INIT =avr_init.o   avr_ipc.o avr_log.o avr_daemon.o
 AVR_TTY  =avr_tty.o    avr_ipc.o avr_log.o
@@ -75,8 +65,8 @@ $(BIN)avr_http: $(AVR_HTTP)
 	chmod 4755 $@
 	strip $@
 
-test: test.c
-	cc $? -o $@
+lite: lite.c
+	cc $(IFLAGS) $? $(SQLITE_LIB) $(LDFLAGS) -o$@
 
 run:
 	avr_init
@@ -87,19 +77,27 @@ kill:
 vi:
 	vi ../log/*
 
+log_tty:
+	tail -f ../log/tty*
+
+log_sqlite:
+	tail -f ../log/sqlite*
+
 clean:
 	-rm ../log/*
-	-rm *.o
 
 status:
 	@git status
 
-stat:
+git:
 	@git status
 
 commit:
 	@git commit -a
 
-#https://github.com/cephalotus/avrbuddy.git (ssh)
+# origin is just the "name" of the remote.  Standard convention is origin. I could've 
+# named it github.  I thought at the time origin was fixed as is remote add.
+# git remote add orign https://github.com/cephalotus/avrbuddy.git (uses ssh as transport)
+#
 github:
 	git push -u origin master

@@ -30,12 +30,15 @@
 #define C_LOGIN		(1<<0)
 #define C_LOGOUT	(1<<1)
 #define C_FAIL		(1<<2)
+#define C_PING		(1<<3)
+#define C_ACK		(1<<4)
+#define C_NAK		(1<<5)
+#define C_EOF		(1<<6)
+#define C_SQL		(1<<7)
 
-/* Ipc Dictionary structre
-** One for each 'anticipated' process
-** will be allocated in shared memory
-** so that the processes can 'peek' at
-** each other
+/* Ipc Dictionary structure:
+** One for each 'anticipated' process will be allocated in shared memory
+** so that the processes can 'peek' at each other
 */
 
 typedef struct 
