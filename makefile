@@ -99,5 +99,5 @@ commit:
 # named it github.  I thought at the time origin was fixed as is remote add.
 # git remote add orign https://github.com/cephalotus/avrbuddy.git (uses ssh as transport)
 #
-github:
+push:
 	git push -u origin master
