@@ -51,6 +51,8 @@ main(int argc, char* argv[])
 	logOpen("system");
 
 	ipcLog("Starting P_SYSTEM process!\n");
+	chdir("/home/yun");
+	ipcLog("Chdir: %s\n",strerror(errno));
 
 	/* pick up shared memory environment */
 	slot=ipcGetSharedMemory(pid,P_SYSTEM,"/tmp/ipc_application");
@@ -88,6 +90,16 @@ main(int argc, char* argv[])
 
 		// make an array for execvp
 		aa=ipcSplit(msg->text,' ');
+		if(!strcmp(aa[0],"cd"))
+		{
+			if(chdir(aa[1])<0)
+			{
+				sprintf(buf,"cd failed: %s",strerror(errno));
+				ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,buf);
+			}
+			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
+			continue;
+		}
 
 		// open a system pipe
 		if((cc=pipe(pp))<0)
@@ -146,7 +158,7 @@ main(int argc, char* argv[])
 		}
 
 		// that's all folks
-		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"C_EOF");
+		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
 
 		sleep(1);
 

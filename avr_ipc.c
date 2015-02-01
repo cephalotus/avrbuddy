@@ -362,9 +362,7 @@ ipcRecvMessage(int msqid, pid_t pid)
 			// don't let intrrupted system call screw us
 			if(errno!=EINTR) return NULL;
 		}
-#ifdef DEBUG
-		ipcLog("Message From: %d  Command: %s\n",msg.rsvp,ipcCmdName(msg.cmd));
-#endif
+		//ipcLog("Message From:[%d] Cmd:[%s] Txt:[%s]\n",msg.rsvp,ipcCmdName(msg.cmd),msg.text);
 
 		// increment system message receive count
 		ipc_head->rxmsg++;

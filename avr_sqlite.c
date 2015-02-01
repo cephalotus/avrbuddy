@@ -55,7 +55,7 @@ int i;
 	ipcSendMessage(pid,msqid,rsvp,C_ACK,reply);
 
 	ipcLog("SENDING EOF Message: %s\n",reply);
-	ipcSendMessage(pid,msqid,rsvp,C_EOF,reply);
+	ipcSendMessage(pid,msqid,rsvp,C_EOF,"");
 	return 0;
 }
 
@@ -139,6 +139,6 @@ main(int argc, char* argv[])
 		{
 			ipcLog("SQL success\n");
 		}
-		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"C_EOF");
+		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
 	}
 }
