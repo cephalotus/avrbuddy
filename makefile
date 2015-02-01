@@ -29,16 +29,16 @@ endif
 AVR_INIT =avr_init.o   avr_ipc.o avr_log.o avr_daemon.o
 AVR_TTY  =avr_tty.o    avr_ipc.o avr_log.o
 AVR_LITE =avr_sqlite.o avr_ipc.o avr_log.o
-AVR_SHELL=avr_shell.o  avr_ipc.o avr_log.o
-AVR_HTTP =avr_http.o   avr_ipc.o avr_log.o
+AVR_MON=avr_mon.o  avr_ipc.o avr_log.o
+AVR_SYSTEM =avr_system.o   avr_ipc.o avr_log.o
 
 all: $(BIN)avr_tty \
 $(BIN)avr_init \
 $(BIN)avr_sqlite \
-$(BIN)avr_shell \
-$(BIN)avr_http 
+$(BIN)avr_mon \
+$(BIN)avr_system 
 
-$(AVR_INIT) $(AVR_TTY) $(AVR_LITE) $(AVR_SHELL) $(AVR_HTTP): avr.h
+$(AVR_INIT) $(AVR_TTY) $(AVR_LITE) $(AVR_MON) $(AVR_SYSTEM): avr.h
 
 $(BIN)avr_init: $(AVR_INIT)
 	cc $(IFLAGS) $(AVR_INIT) $(LDFLAGS) -o$@
@@ -55,13 +55,13 @@ $(BIN)avr_sqlite: $(AVR_LITE)
 	chmod 4755 $@
 	strip $@
 
-$(BIN)avr_shell: $(AVR_SHELL)
-	cc $(IFLAGS) $(AVR_SHELL) $(LDFLAGS) -o$@
+$(BIN)avr_mon: $(AVR_MON)
+	cc $(IFLAGS) $(AVR_MON) $(LDFLAGS) -o$@
 	chmod 4755 $@
 	strip $@
 
-$(BIN)avr_http: $(AVR_HTTP)
-	cc $(IFLAGS) $(AVR_HTTP) -o$@
+$(BIN)avr_system: $(AVR_SYSTEM)
+	cc $(IFLAGS) $(AVR_SYSTEM) -o$@
 	chmod 4755 $@
 	strip $@
 
@@ -73,6 +73,7 @@ run:
 
 kill:
 	pkill avr_init
+	make clean
 
 vi:
 	vi ../log/*

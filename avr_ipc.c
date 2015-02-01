@@ -251,12 +251,14 @@ ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
 	strcpy(msg.text,txt);
 
 
+#ifdef DEBUG
 	ipcLog("Send TO_ADDR: %d FROM_ADDR: %d\n",mtype,msg.rsvp);
 	ipcLog("msqid %d\n",msqid);
 	ipcLog("msg.len %d\n",msg.len);
 	ipcLog("msgflg %d\n",msgflg);
 	ipcLog("msg.scmd %s\n",msg.scmd);
 	ipcLog("msg.text %s\n",msg.text);
+#endif
 
 	for(;;) 
 	{
@@ -296,6 +298,7 @@ ipcMessageStatus(int msqid)
 		ipcLog("msgctl IPC_INFO failed ERROR: %s\n",strerror(errno));
 		return errno;
 	}
+	ipcLog("msgctl IPC_INFO ok. Add more logging to see msqid_ds structure\n");
 	return 0;
 }
 
@@ -310,32 +313,58 @@ ipcRemoveMsgQueue(int msqid)
 	return 0;
 }
 
+int
+ipcCleanMessageQueue(int msqid)
+{
+	MSG_BUF msg;
+	size_t size=sizeof(msg)-sizeof(long);
+	int mtype=0;
+	int msgflg=IPC_NOWAIT;
+
+	ipcLog("msgrcv(msqid=%d,size=%d,mtype=%d,msgflg=%02x)\n"
+	, msqid
+	, size
+	, mtype
+	, msgflg
+	);
+
+	while(msgrcv(msqid,&msg,size,mtype,msgflg)>0) 
+	{
+		ipcLog("Abandoned Message From: %d  Command: %s\n",msg.rsvp,ipcCmdName(msg.cmd));
+	}
+}
+
+
 MSG_BUF *
 ipcRecvMessage(int msqid, pid_t pid)
 {
 	static MSG_BUF msg;
 	size_t size=sizeof(msg)-sizeof(long);
 	int msgflg=0;  // may add later if need for selective IPC_NOWAIT arises
-
+	int mtype=pid;
+#ifdef DEBUG
 	ipcLog("RSVP_ADDR: %d msgrcv(msqid=%d,msg=%x,size=%d,mtype=%d,msgflg=%d)\n"
 	, pid
 	, msqid
 	, msg
 	, size
-	, pid
+	, mtype
 	, msgflg
 	);
+#endif
 
 	for(;;) 
 	{
 		// man: ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp, int msgflg);
-		if(msgrcv(msqid,&msg,size,pid,msgflg)<0) 
+		if(msgrcv(msqid,&msg,size,mtype,msgflg)<0) 
 		{
 			ipcLog("msgrcv failed ERROR: %s\n",strerror(errno));
 			// don't let intrrupted system call screw us
 			if(errno!=EINTR) return NULL;
 		}
+#ifdef DEBUG
 		ipcLog("Message From: %d  Command: %s\n",msg.rsvp,ipcCmdName(msg.cmd));
+#endif
 
 		// increment system message receive count
 		ipc_head->rxmsg++;
@@ -374,8 +403,8 @@ ipcTypeName(int ptype)
 	case	P_ROOT   : return "P_ROOT";
 	case	P_TTY 	 : return "P_TTY";
 	case	P_SQLITE : return "P_SQLITE";
-	case	P_SHELL	 : return "P_SHELL";
-	case	P_HTTP	 : return "P_HTTP";
+	case	P_MON	 : return "P_MON";
+	case	P_SYSTEM : return "P_SYSTEM";
 	default			 : return "???";
 	}
 }
@@ -393,7 +422,8 @@ ipcCmdName(int cmd)
 	case C_NAK		: return "C_NAK";
 	case C_EOF		: return "C_EOF";
 	case C_SQL		: return "C_SQL";
-	default			: return "C_UNKN";
+	case C_SYS		: return "C_SYS";
+	default			: return "C_UNK";
 	}
 }
 

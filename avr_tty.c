@@ -42,7 +42,7 @@ void // signal handler
 ttyTerminate(int sig)
 {
 int status;
-	ipcLog("Proc %d TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
+	ipcLog("Proc %d P_TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
 	/*
 	if(cpid)
 	{
@@ -100,7 +100,7 @@ IPC_DICT *d;
 	// tell root process we are here
 	ipcNotify(pid,msqid);
 
-	ipcLog("TTY Process %d On-Line in slot %d\n"
+	ipcLog("P_TTY Process %d On-Line in slot %d\n"
 	, pid
 	, slot
 	);
@@ -108,21 +108,14 @@ IPC_DICT *d;
 	/* open the comm port */
 	if((fd=devOpen(device))<0)
 	{
-		ipcLog("Can't open %s Error: %s\n",device,strerror(errno));
-		sprintf(com_buf,"Process %d Slot %d %s"
-		, pid
-		, slot
-		, strerror(errno)
-		);
-
+		ipcLog("devOpen(%s) failure %s Error: %s\n",device,strerror(errno));
 		ipcFatalExit(pid,"Processing Cannot Continue, Waiting to be killed...\n");
 	}
 
-	ipcLog("Successfully Opened TTY port=%s speed=%d dlev:%d\n",device,getSpeed(speed),avr_dlev);
+	ipcLog("P_TTY Opened port=%s speed=%d dlev:%d\n",device,getSpeed(speed),avr_dlev);
 
 
 	// we inherited signal traps from parent
-
 	for(i=0;;)
 	{
 		// read 1 byte
@@ -143,15 +136,16 @@ IPC_DICT *d;
 
 		ipcLog(">> [%02d][%02x][%c]\n",i,c,c);
 
-		if(c=='\r') continue;
-		if(c=='\n')
+		if(c=='\r') continue; // ignore CR
+
+		if(c=='\n') // process on NL
 		{
 			// terminate the string
 			com_buf[i]='\0';
 
-/*
+#ifdef DEBUG
 			ipcLog(">> [%s]\n",com_buf);
-*/
+#endif
 			// we will put some code in here to implement protocol for avr sketches
 			// ok, we have a request.
 
@@ -163,15 +157,15 @@ IPC_DICT *d;
 			arg=s;
 			ipcLog("<< Command:[%s] Arg:[%s]\n",cmd,arg);
 
-			if(!strcmp(cmd,"C_PING"))
+			if(!strcmp(cmd,"ping"))
 			{
 
-				n=sprintf(com_buf,"C_ACK\n");
+				n=sprintf(com_buf,"ack\n");
 				n=avrWrite(fd,n,com_buf);
 				ipcLog("Sent %d bytes to avr\n",n);
 			}
 
-			if(!strcmp(cmd,"C_SQLITE"))
+			if(!strcmp(cmd,"sql"))
 			{
 				// send a message to the C_SQLITE process
 				int id=ipcGetPidByType(P_SQLITE);
@@ -189,7 +183,7 @@ IPC_DICT *d;
 				// compute slot number
 				cslot=d-ipc_dict;
 
-				ipcLog("Message from:%d  Slot:%d type:%s cmd: %s msg:%s\n"
+				ipcLog("Message From: %d  Slot: %d type: %s cmd: %s msg: %s\n"
 				, msg->rsvp
 				, cslot
 				, d->stype
@@ -272,33 +266,34 @@ extern int errno;
 
 	if(isatty(0) && ioctl(0,TCGETA,&tty))
 	{
-		ipcLog("Fcntl Error %d\n",errno);
-		return -1;
+		ipcLog("Line %d ioctl Error %s\n",__LINE__,strerror(errno));
+		return errno;
 	}
 
 	if((fd=open(device,O_RDWR|O_NDELAY))<0)
 	{
-		return -1;
+		ipcLog("Line %d open Error %s\n",__LINE__,strerror(errno));
+		return errno;
 	}
 
 	/* set control flags  use RTS/CTS flow */
-	tty.c_iflag = IGNPAR|IGNBRK;
-	tty.c_lflag = tty.c_oflag = 0;
-	tty.c_cflag = speed|csize|stops|parity|CREAD|CLOCAL;
-	tty.c_cc[VMIN] = vmin;
-	tty.c_cc[VTIME] = vtime;
+	tty.c_iflag=IGNPAR|IGNBRK;
+	tty.c_lflag=tty.c_oflag = 0;
+	tty.c_cflag=speed|csize|stops|parity|CREAD|CLOCAL;
+
+	tty.c_cc[VMIN]=vmin;
+	tty.c_cc[VTIME]=vtime;
 
 	if(ioctl(fd,TCSETAW,&tty))
 	{
-		ipcLog("Fcntl Error %d\n",errno);
-		ipcLog("Line %d Fcntl Error %d\n",__LINE__,errno);
+		ipcLog("Line %d ioctl Error %s\n",__LINE__,strerror(errno));
 	}
 
 	// Ensure blocking reads
 	if(fcntl(fd,F_SETFL,(fcntl(fd,F_GETFL)&~O_NDELAY),0))
 	{
-		ipcLog("Line %d Fcntl Error %d\n",__LINE__,errno);
-		return -1;
+		ipcLog("Line %d fcntl Error %s\n",__LINE__,strerror(errno));
+		return errno;
 	}
 	return(fd);
 }

@@ -25,8 +25,11 @@ int status; pid_t cpid;
 	if((cpid=waitpid(cpid,&status,WNOHANG))>0)
 	{
 		ipcLog("Child %d is Dead\n",cpid);
-		ipcClearSlot(cpid);
+
 	}
+
+	// clean up slot in case child abandoned it
+	ipcClearSlot(cpid);
 
 	// reset the signal
 	signal(SIGCLD,sigDeadChild);
@@ -54,6 +57,8 @@ pid_t cpid;
 
 		// kill and wait to prevent zombie process
 		kill(cpid,SIGTERM); 
+
+		// trap death and cleanup after child 
 		sigDeadChild(SIGTERM);
 	}
 	if(!kflag)
@@ -66,6 +71,9 @@ pid_t cpid;
 
 	ipcLog("Getting Queue Status, id=%d\n",msqid);
 	ipcMessageStatus(msqid);
+
+	ipcLog("Cleaning out Message Queue, id=%d\n",msqid);
+	ipcCleanMessageQueue(msqid);
 
 	ipcLog("Removing Message Queue, id=%d\n",msqid);
 	ipcRemoveMsgQueue(msqid);
@@ -81,11 +89,7 @@ char ib[128], fn[41];
 
 FILE *fp;
 MSG_BUF *msg;
-int pid=getpid();
-
-	logOpen("init");
-
-	ipcLog("PID %d Starting Avr Application Group!\n",pid);
+int pid;
 
 	/* divorce ourselves from the process
 	** group that we started in so that
@@ -94,6 +98,14 @@ int pid=getpid();
 	** see daemon.c
 	*/
 	daemonize();
+
+	// have to do this after daemonize because it forked!
+	pid=getpid();
+
+	logOpen("init");
+
+	ipcLog("PID %d Starting Avr Application Group!\n",pid);
+
 
 	ipc_slot=ipcGetSharedMemory(pid,P_ROOT,"/tmp/ipc_application");
 	ipcLog("Shared Memory at %x slot=%d\n",ipc_dict,ipc_slot);
@@ -145,7 +157,7 @@ int pid=getpid();
 		// compute slot number
 		cslot=d-ipc_dict;
 
-		ipcLog("Message from:%d  Slot:%d type:%s cmd: %s msg:%s\n"
+		ipcLog("Message From: %d  Slot: %d type: %s cmd: %s msg: %s\n"
 		, msg->rsvp
 		, cslot
 		, d->stype

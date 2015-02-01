@@ -21,7 +21,7 @@ extern IPC_DICT *ipc_dict;
 void // signal handler
 dbDterminate(int sig)
 {
-	ipcLog("SQLITE Terminiate Request! SIG: %s\n",ipcSigName(sig));
+	ipcLog("P_SQLITE Terminiate Request! SIG: %s\n",ipcSigName(sig));
 	if(zErrMsg) sqlite3_free(zErrMsg);
 	if(db)      sqlite3_close(db);
 	ipcExit(getpid(),0,sig);
@@ -127,7 +127,7 @@ main(int argc, char* argv[])
 		msg=ipcRecvMessage(msqid, pid);
 		rsvp=msg->rsvp;
 
-		ipcLog("Message from %d [%s] \n",msg->rsvp,msg->text);
+		ipcLog("Message From %d [%s] \n",msg->rsvp,msg->text);
 
 		// Execute SQL statement
 		if((rc=sqlite3_exec(db, msg->text, callback, 0, &zErrMsg)) != SQLITE_OK )

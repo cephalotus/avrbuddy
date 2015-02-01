@@ -65,7 +65,6 @@ int fd;
 	makeLogBase(proc);
 	newLog();
 
-/*
 	// get file descriptor
 	fd=fileno(fp);
 
@@ -77,7 +76,6 @@ int fd;
 		close(2); dup(fd);
 	}
 	return(fd);
-*/
 }
 
 void
@@ -144,19 +142,7 @@ struct tm *tm;
 long now;
 
 	time(&now), tm=localtime(&now);
-
-	if(!fp)
-	{
-		sprintf(tb,"unk_%d",getpid());
-		logOpen(tb);
-	}
-	if(!fp) return(0);
-
-	time(&now); tm=localtime(&now);
-	if(dlast != tm->tm_mday)
-	{
-		newLog();
-	}
+	ipcValidateLog(tm);
 
 	/* time logs */
 	fprintf(fp,"%02d:%02d:%02d "
@@ -170,3 +156,39 @@ long now;
 	va_end(args);
 	fflush(fp);
 }
+
+int
+ipcRawLog(const char *format, ...)
+{
+va_list args;
+char tb[256];
+struct tm *tm;
+long now;
+
+	time(&now), tm=localtime(&now);
+	ipcValidateLog(tm);
+
+	va_start(args,format); 
+	vfprintf(fp,format,args);
+	va_end(args);
+	fflush(fp);
+}
+
+int
+ipcValidateLog(struct tm *tm)
+{
+char tb[256];
+
+	if(!fp)
+	{
+		sprintf(tb,"unk_%d",getpid());
+		logOpen(tb);
+	}
+	if(!fp) return(0);
+
+	if(dlast != tm->tm_mday)
+	{
+		newLog();
+	}
+}
+

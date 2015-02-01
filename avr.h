@@ -20,25 +20,30 @@
 #define MAX_IPC		5
 
 /* IPC Entity Types*/
-#define P_ROOT		(1<<0)
-#define P_TTY		(1<<1)
-#define P_SQLITE	(1<<2)
-#define P_SHELL		(1<<3)
-#define P_HTTP		(1<<4)
+#define P_ROOT		1
+#define P_TTY		2
+#define P_SQLITE	3
+#define P_MON		4
+#define P_SYSTEM	5
 
 /* IPC Command Definitions */
-#define C_LOGIN		(1<<0)
-#define C_LOGOUT	(1<<1)
-#define C_FAIL		(1<<2)
-#define C_PING		(1<<3)
-#define C_ACK		(1<<4)
-#define C_NAK		(1<<5)
-#define C_EOF		(1<<6)
-#define C_SQL		(1<<7)
+#define C_LOGIN		1
+#define C_LOGOUT	2
+#define C_FAIL		3
+#define C_PING		4
+#define C_ACK		5
+#define C_NAK		6
+#define C_EOF		7
+#define C_SQL		8
+#define C_SYS		9
 
-/* Ipc Dictionary structure:
-** One for each 'anticipated' process will be allocated in shared memory
-** so that the processes can 'peek' at each other
+/* Ipc Dictionary and Ipc Head structures:
+** One IPC_DICT each 'anticipated' process and one IPC_HEAD is required.
+**
+** A block of shared memory will be allocated which will be the size of
+** (MAX_IPC*sizeof(IPC_DICT))+sizeof(IPC_HEAD). The memory is then partitioned
+** by setting IPC_DICT pointer and IPC_HEAD pointer to proper memory offsets.
+** This way all processes can examine each other's demographics.
 */
 
 typedef struct 
@@ -101,6 +106,7 @@ extern int
 , ipc_dlev
 , ipc_dup
 , ipcLog(const char *format, ...)
+, ipcRawLog(const char *format, ...)
 , ipcDetail(const char* format, ...)
 , ipcDebug(int lev, const char*format,...)
 , ipcGetSharedMemory(pid_t pid, int ptype, const char *token)
@@ -110,6 +116,7 @@ extern int
 , ipcAllocSharedMemory(pid_t pid, int ptype, const char *token)
 , ipcGetMessageQueue(pid_t pid, int ptype, char *token)
 , ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
+, ipcCleanMessageQueue(int msqid)
 , ipcRemoveMsgQueue(int msqid)
 ;
 
