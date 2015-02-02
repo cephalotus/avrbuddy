@@ -1,4 +1,6 @@
-This project is not yet ready for prime time and is a work in progress. Some things described here may incomplete or not fully implemented, but the framework is in place and stable. I have this on github to maybe create Arduino-Yun community interest. Collaborators are welcome.
+This project is not yet ready for prime time and is a work in progress. Some things described here may incomplete or 
+not fully implemented, but the framework is in place and stable. I have this on github to maybe create Arduino-Yun 
+community interest. Collaborators are welcome.
 
 Author: steve@heggood.com
 
@@ -6,11 +8,110 @@ Project Overview:
 
 This is an application for the Arduino-Yun that serves as an adjucnt for existing interconnects between the two Yun processors.
 
-It consists of a process group interconnected via shared memory and message queue. A lead process avr_init is run to startup the application. It first establishes a shared memory segment and a message queue, then starts up other utility processes defined in avr.config. Currently I have three that startup in my configuration:
+It consists of a process group interconnected via shared memory and message queue. A lead process avr_init is run to startup the application. 
+It first establishes a shared memory segment and a message queue, then starts up other utility processes defined in avr.config. Currently I 
+have three that startup in my configuration:
 
-    avr_tty -- establishes a serial connection between ATmega32u4 Seral1 and linux dev/ATH0.
-    avr_sqlite -- establishes an sqlite database that be accessed from the ATmega32u4 via avr_tty, or the other processes. 3. avr_system -- listens for requests for shell commands such as date or ls and returns result to requesting process.
+	avr_init   -- starts up the application and spans processes listed in /home/yun/lib/avr.confit
+    avr_tty    -- establishes a serial connection between ATmega32u4 Seral1 and linux dev/ATH0.
+    avr_sqlite -- establishes an sqlite database that be accessed from the ATmega32u4 via avr_tty, or the other processes. 
+	avr_system -- listens for requests for shell commands such as date or ls and returns result to requesting process.
 
-avr_mon is run on demand from linux shell to monitor the app. Currently provides help, ps, sql, sys, and kill.
+	avr_mon is run on demand from linux shell to monitor the app. Currently provides help, ps, sql, sys, and kill.
 
-See the README file in the repository that details the application. See the INSTALL file in the repository that outlines the application environment.
+To install the application you need to (as root):
+	edit /etc/group and append a new group 'yun'.
+	edit /etc/passwd and append a new user 'yun'.
+	mkdir /home/yun.
+	chown yun:yun /home/yun.
+	cd /home/yun
+
+	edit .profile or .bash_profile depending on the shell you use to include:
+		PATH=/home/yun/bin:$PATH.
+
+	chown yun:yun (.bash_profile or .profile) 
+	passwd yun (I simply set mine to yun)
+	exit and log in as yun.
+
+	cp avrbuddy.tgz to /home/yun.
+	tar zxvf avrbuddy.tgz
+
+	You should have directories bin, lib, log, and src.
+
+	Binaries will be in the bin direcory.
+
+	avr_init.
+
+	ps | grep yun - to see if the processes in /home/yun/lib/avr.confib have started.
+	
+	Examine the logs (one for each process) in /home/yun/log to see any failures.
+
+	The only notable issue you may have is that avr_sqlite links to libsqlite3.a rather
+	than libsqlite3.so or libsqlite3.so3, as they refused to link in the complile process.
+	Search the web for libsqlite3.a, download it and copy it to /usr/lib.
+
+	You can run avr_mon and type "ps" to see the application processes that are online.
+	While in avr_mon type help to see command options.  Typing 'sys date' should return the date from linux.
+	Typing "sql SELECT * from pins" should return the data record from the pin table in yun.db.
+
+	Write a sketch that does serial1begin(9600) and writes "ping" to seral1.
+	Wait for ACK message from linux.
+	
+	Example sketch follows:
+
+
+		/*
+		  Avrbuddy communications test
+		  This sketch talks to the 'Avrbuddy' Application
+		  via serial1.
+		  
+		  Author: Stephen Heggood
+				  steve@heggood.com
+		 */
+
+		int i, c;
+
+		void setup() 
+		{   
+			Serial1.begin(9600); 
+		}
+
+		void loop() 
+		{
+		char com_buf[128];
+		int i;
+
+			// ping the avr_tty process
+			Serial1.println("C_PING avr_tty");
+			
+			// Wait for linux avr_tty process to be online
+			for(i=1; i<128; i++)
+			{
+				c=Serial1.read(); // read from Linux  
+				Serial.write(c);  // write to USB-serial
+				com_buf[i]=c;	  // build a string
+				if(c=='\n')	  // Linux EOL?
+				{
+					com_buf[i]='\0';
+					if(!strcmp(com_buf,"C_ACK"))
+					{
+						break;
+					}
+				}
+			}
+			delay(1000); // may not be necessary.
+
+			// send request for sqlite service
+			Serial1.println("sql SELECT * FROM pins\n");
+
+				// here you would go back into Serial1.read() to get the response from Avrbuddy.
+				// it would be better to write a function AvrBuddyRead() which includes the above code
+				// with a series of strcmp() statements and calls for any responses you are expecting.
+				
+				// try sending "sys date" to get current date/time.
+				// anything similar to what they use in the 'process' lib
+				// is acceptable. I.e 'sys cd /home/yun/src', 'sys ls', etc.
+				
+				
+			while(1);  				//forever
+		}

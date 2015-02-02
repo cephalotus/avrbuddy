@@ -250,11 +250,12 @@ char com_buf[256];
 		// point to sender's dictionary entry
 		d=&ipc_dict[msg->slot];
 
-		ipcLog("Reply From: %d  Slot: %d type: %s cmd: %s\n"
+		ipcLog("Reply From: %d  Slot: %d type: %s cmd: %s [%s]\n"
 		, msg->rsvp
 		, msg->slot
 		, d->stype
 		, msg->scmd
+		, msg->text
 		);
 		switch(msg->cmd)
 		{

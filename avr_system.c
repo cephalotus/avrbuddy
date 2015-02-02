@@ -71,6 +71,9 @@ main(int argc, char* argv[])
 
 	for(;;)
 	{
+	FILE *pp;
+	char cmd[512];
+
 		ipcLog("Waiting for Message\n");
 		// wait for messages or signals
 		msg=ipcRecvMessage(msqid, pid);
@@ -88,6 +91,9 @@ main(int argc, char* argv[])
 		, msg->text
 		);
 
+		// save the command
+		strcpy(cmd,msg->text);
+
 		// make an array for execvp
 		aa=ipcSplit(msg->text,' ');
 		if(!strcmp(aa[0],"cd"))
@@ -100,50 +106,17 @@ main(int argc, char* argv[])
 			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
 			continue;
 		}
-
-		// open a system pipe
-		if((cc=pipe(pp))<0)
+		if((pp=popen(cmd,"r"))==NULL)
 		{
-			fprintf(stderr,"Line %d Error:%s",__LINE__,strerror(errno));
-			exit(1);
+			sprintf(buf,"popen(%s) failed: %s\n",cmd,strerror(errno));
+			ipcLog("%s",buf);
+
+			// uh oh
+			ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,buf);
+			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
 		}
 
-		// standard fork with pipe arrangement
-		switch(cpid=fork())
-		{
-		case -1:			// error
-			exit(1);
-
-		case 0:				// child
-			close(1);		// close stdin
-			dup(pp[1]);		// replace stdin with pipe write 
-			close(pp[0]);
-
-			
-			strcpy(buf,aa[0]);
-			part=dirname(buf);
-			ipcLog("dirname: %s\n",part);
-
-			strcpy(buf,aa[0]);
-			part=basename(buf);
-			ipcLog("basename: %s\n",part);
-
-			// show what we are about to do
-			ipcLog("execvp(%s,[",aa[0]); for(cc=1; aa[cc]; cc++) ipcRawLog("%s ",aa[cc]); ipcRawLog("])\n",aa[cc]);
-
-			// have linux run the request
-			execvp(aa[0],aa);
-			exit(0);
-
-		default:			// parent
-			close(0);       // close stdout
-			dup(pp[0]);     // replace stdout with pipe write 
-			close(pp[1]);
-			break;
-		}
-
-		// read ouput lines and message them to requestor
-		while(fgets(buf, sizeof(buf), stdin)!=NULL)
+		while(fgets(buf, sizeof(buf), pp)!=NULL)
 		{
 			// insulate from interrupt system calls
 			if(errno && errno==EINTR) continue;
@@ -157,13 +130,9 @@ main(int argc, char* argv[])
 			ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,buf);
 		}
 
+		fclose(pp);
+
 		// that's all folks
 		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
-
-		sleep(1);
-
-		// kill and wait to prevent zombie process
-		kill(cpid,SIGTERM); 
-		waitpid(cpid,&status,WNOHANG);
 	}
 }

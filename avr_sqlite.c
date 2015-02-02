@@ -54,7 +54,7 @@ int i;
 	ipcLog("SENDING ACK Message: %s\n",reply);
 	ipcSendMessage(pid,msqid,rsvp,C_ACK,reply);
 
-	ipcLog("SENDING EOF Message: %s\n",reply);
+	ipcLog("SENDING EOF Message: %s\n","");
 	ipcSendMessage(pid,msqid,rsvp,C_EOF,"");
 	return 0;
 }
