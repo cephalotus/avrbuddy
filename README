@@ -19,30 +19,65 @@ have three that startup in my configuration:
 
 	avr_mon is run on demand from linux shell to monitor the app. Currently provides help, ps, sql, sys, and kill.
 
+NOTES: 
+	To use sqlite, you will need to use opkg to install sqlite3 or use the web admin panel under the softare tab.
+
+	If you choose to do any development on the application or recompile it you will need to use opkg to install gcc, likewise
+	you can use the web admin panel.
+
+	I have provided a basic sqlite3 database; /home/yun/lib/yun.db which contains a pin table.
+	After you have installed sqlite3, you should be able to query and admin on the database.  Either cd /home/yun/lib and do 'sqlite3 yun.db'
+	or use absolute path as in 'sqlite3 /home/yun/lib/yun.db'. Use '.help' in sqlite3 to see how to show tables, schema, etc.
+
+
 To install the application you need to (as root):
-	edit /etc/group and append a new group 'yun'.
-	edit /etc/passwd and append a new user 'yun'.
-	mkdir /home/yun.
-	chown yun:yun /home/yun.
-	cd /home/yun
+	edit /etc/inittab and comment the last line, like:
+	#ttyATH0::askfirst:/bin/ash --login
+	
+	This is necessary to keep /bin/ash from competing for serial1 (/dev/ATH0).
 
-	edit .profile or .bash_profile depending on the shell you use to include:
-		PATH=/home/yun/bin:$PATH.
+	Reboot the Yun.
 
-	chown yun:yun (.bash_profile or .profile) 
-	passwd yun (I simply set mine to yun)
+	edit /etc/group and append a new group 'yun', on mine I appended:
+	yun:x:300:
+
+	edit /etc/passwd and append a new user 'yun', on mine I appended:
+	yun:x:300:300:yun:/home/yun:/bin/bash
+	(I did opkg list | grep bash -- and installed all the packages found since I am partial to bash)
+
+	# mkdir /home/yun.
+
+	# chown yun:yun /home/yun.
+
+	# cd /home/yun
+
+	edit .profile or .bash_profile depending on your shell you use to and append:
+	PATH=/home/yun/bin:$PATH.
+
+	# chown yun:yun (.bash_profile or .profile) 
+
+	# passwd yun (I simply set mine to yun)
+
 	exit and log in as yun.
 
 	cp avrbuddy.tgz to /home/yun.
 	tar zxvf avrbuddy.tgz
 
-	You should have directories bin, lib, log, and src.
+	$ ls
+
+	You should see directories bin, lib, log, and src.
 
 	Binaries will be in the bin direcory.
 
-	avr_init.
+	$ avr_init
 
 	ps | grep yun - to see if the processes in /home/yun/lib/avr.confib have started.
+	I have ps aliased to ps='ps | grep yun' in .bashrc for convenience.  Plain ps shows every process.
+
+	or
+
+	$ avr_mon
+	Then ps at the prompt.
 	
 	Examine the logs (one for each process) in /home/yun/log to see any failures.
 
