@@ -85,6 +85,25 @@ logClose()
 	fp=NULL;
 }
 
+int
+ipcSysError(const char *fmt,...)
+{
+va_list	args;
+char tb[128];
+
+	va_start(args,fmt);
+	vsprintf(tb, fmt, args);
+	va_end(args);
+	ipcLog("%s ",tb);
+
+	if(errno)
+		ipcLog("%s\n",strerror(errno));
+	else
+		ipcLog("\n");
+
+	return errno;
+}
+
 void
 ipcFatalExit(pid_t pid, const char*format,...)
 {
@@ -191,4 +210,4 @@ char tb[256];
 		newLog();
 	}
 }
-
+// vim:cin:ai:sts=4 ts=4 sw=4 ft=cpp

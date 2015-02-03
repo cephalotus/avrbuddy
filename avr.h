@@ -108,6 +108,7 @@ extern int
 , ipcLog(const char *format, ...)
 , ipcRawLog(const char *format, ...)
 , ipcDetail(const char* format, ...)
+, ipcSysError(const char *fmt,...)
 , ipcDebug(int lev, const char*format,...)
 , ipcGetSharedMemory(pid_t pid, int ptype, const char *token)
 , ipcGetPidByType(int type)
@@ -118,6 +119,7 @@ extern int
 , ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
 , ipcCleanMessageQueue(int msqid)
 , ipcRemoveMsgQueue(int msqid)
+
 ;
 
 extern long shmid; // from avr_ipc.c
