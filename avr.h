@@ -18,6 +18,7 @@
 #define TRACE fprintf(stderr,"PID: %d FN: %s LN:%d\n",getpid(),__FILE__,__LINE__);
 
 #define MAX_IPC		5
+#define MAX_TEXT	200
 
 /* IPC Entity Types*/
 #define P_ROOT		1
@@ -36,6 +37,7 @@
 #define C_EOF		7
 #define C_SQL		8
 #define C_SYS		9
+#define C_ERR		10
 
 /* Ipc Dictionary and Ipc Head structures:
 ** One IPC_DICT each 'anticipated' process and one IPC_HEAD is required.
@@ -90,8 +92,20 @@ typedef struct
 	char text[256]; 
 } MSG_BUF
 ;
+typedef struct 
+{
+	int  from_pid;
+	int  to_pid;
+	char text[256]; 
+} IPC_TEXT;
+;
 
-MSG_BUF *recvMessage(int msqid, long mtype) ;
+extern IPC_TEXT 
+  *ipc_text
+, *ipcGetText(pid_t from_pid, pid_t to_pid)
+;
+
+MSG_BUF *recvMessage(int msqid, long mtype);
 
 typedef unsigned char BYTE;
 
@@ -105,6 +119,7 @@ extern int
   msqid
 , ipc_dlev
 , ipc_dup
+, ipcAddText(pid_t from_pid, pid_t to_pid, const char *text)
 , ipcLog(const char *format, ...)
 , ipcRawLog(const char *format, ...)
 , ipcDetail(const char* format, ...)
@@ -144,4 +159,5 @@ char
   *ipcTypeName(int ptype)
 , *ipcCmdName(int cmd)
 , *ipcSigName(int sig)
+, *ipcTypeNameByPid(pid_t pid)
 ;

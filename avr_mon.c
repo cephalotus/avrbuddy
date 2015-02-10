@@ -22,6 +22,13 @@ shellTerminate(int sig)
 	ipcExit(getpid(),0,0);
 }
 
+void // signal handler
+shellTimeout(int sig)
+{
+	ipcLog("P_MON SIG: %s!\n",ipcSigName(sig));
+	printf("Request Timed Out!\n");
+}
+
 main(int argc, char *argv[])
 {
 char *s, *cmd, *arg, buf[1024];
@@ -73,21 +80,19 @@ int cnt, c, x, i;
 
 		system("tput clear");
 		printf("\n\n\n\n\n\n");
-		printf("    Welcome to Heggood's avrbuddy application!\n\n");
+		printf("    Welcome to Stephen Heggood's avrbuddy application!\n\n");
 		printf("    Type help for command list.\n\n");
 		printf("    Most shell commands will work from prompt (vi will not).\n\n");
 		printf("    If you want shell commands as seen by co-proccess using avr_system,\n");
 		printf("    you must prepend the sys command i.e mon> sys date\n\n");
-		printf("    sys command relies on avr_system process\n");
-		printf("    sql command relies on avr_sqlite process\n");
-		printf("    do\n");
-		printf("    mon> ps\n");
-		printf("    to ensure these are running\n");
+		printf("    sys <command> relies on avr_system process\n");
+		printf("    sql <command> relies on avr_sqlite process\n");
+		printf("    ps  to ensure these are running\n\n");
 
 
 		for(;;)
 		{
-			printf("mon> ");
+			printf("<mon>$ ");
 			fgets(buf, sizeof(buf), stdin);
 			buf[strlen(buf)-1]='\0';
 
@@ -108,6 +113,7 @@ int cnt, c, x, i;
 			else if(!strcmp(cmd,"kill")) 	doKillCommand(arg);
 			else if(!strcmp(cmd,"start")) 	doStartCommand(arg);
 			else if(!strcmp(cmd,"log")) 	doLogCommand(arg);
+			else if(!strcmp(cmd,"txt")) 	doTxtCommand(arg);
 			else 
 			{
 				char tb[1024];
@@ -121,6 +127,20 @@ int cnt, c, x, i;
 		//ipcDebug(50,"<<[%02d]< %02x\n",i,buf[i]);
 
 		ipcLog("CP: buf[%02d]< %02x\n",i,buf[i]);
+	}
+}
+
+doTxtCommand()
+{
+int i;
+	for(i=0; i<MAX_TEXT; i++)
+	{
+		if(!ipc_text[i].from_pid) continue;
+		printf("pid:%d->%d  txt:%s\n"
+		, ipc_text[i].from_pid
+		, ipc_text[i].to_pid
+		, ipc_text[i].text
+		);
 	}
 }
 
@@ -233,40 +253,65 @@ getMessageReply(int mtype, int cmd, char *arg)
 {
 IPC_DICT *d;
 MSG_BUF *msg;
+IPC_TEXT *txt;
 int n, addr, cslot;
 char com_buf[256];
 
 	addr=ipcGetPidByType(mtype);
+
 	ipcLog("Send --> from:%d to:%d\n",pid,addr);
+
 	ipcSendMessage(pid, msqid, addr, cmd, arg);
+
 	ipcLog("Sent %s to pid:%d\n",arg,addr);
+
 	ipcLog("Waiting for Reply\n");
 
-	for(;;)
+	signal(SIGALRM,shellTimeout); alarm(2);
+
+	// wait for reply or signal
+	msg=ipcRecvMessage(msqid, pid);
+
+	alarm(0);
+
+	// point to sender's dictionary entry
+	d=&ipc_dict[msg->slot];
+
+
+	ipcLog("Reply From: %d  Slot: %d type: %s cmd: %s [%s]\n"
+	, msg->rsvp
+	, msg->slot
+	, d->stype
+	, msg->scmd
+	, msg->text
+	);
+	switch(msg->cmd)
 	{
-		// wait for reply or signal
-		msg=ipcRecvMessage(msqid, pid);
+	case C_ERR :
+		printf("%s\n",msg->text);
+		return -1;
 
-		// point to sender's dictionary entry
-		d=&ipc_dict[msg->slot];
-
-		ipcLog("Reply From: %d  Slot: %d type: %s cmd: %s [%s]\n"
-		, msg->rsvp
-		, msg->slot
-		, d->stype
-		, msg->scmd
-		, msg->text
-		);
-		switch(msg->cmd)
+	case C_EOF :
+		//printf("EOF\n");
+		while((txt=ipcGetText(msg->rsvp,pid))!=NULL)
 		{
-		case C_EOF :
-			//printf("EOF\n");
-			return 0;
+			printf("%s\n",txt->text);
+			/*
+			ipcLog("%d->%d  %s\n"
+			, txt->from_pid
+			, txt->to_pid
+			, txt->text
+			);
+			*/
 
-		case C_ACK :
-			printf("%s\n",msg->text);
-			break;
+			// release the text slot
+			txt->from_pid=txt->to_pid=0;
 		}
+		return 0;
+
+	case C_ACK :
+		printf("%s\n",msg->text);
+		break;
 	}
 	return 0;
 }

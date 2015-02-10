@@ -13,6 +13,7 @@
 
 DFLAGS=-D_GNU_SOURCE
 CFLAGS=-O
+LDFLAGS=-lrt
 
 BIN=/home/yun/bin/
 #determine which sqlite3 library to use
@@ -61,7 +62,7 @@ $(BIN)avr_mon: $(AVR_MON)
 	strip $@
 
 $(BIN)avr_system: $(AVR_SYSTEM)
-	cc $(IFLAGS) $(AVR_SYSTEM) -o$@
+	cc $(IFLAGS) $(LDFLAGS) $(AVR_SYSTEM) -o$@
 	chmod 4755 $@
 	strip $@
 
@@ -86,6 +87,7 @@ log_sqlite:
 
 clean:
 	-rm ../log/*
+	-rm *.o
 
 status:
 	@git status
@@ -99,6 +101,7 @@ commit:
 # origin is just the "name" of the remote.  Standard convention is origin. I could've 
 # named it github.  I thought at the time origin was fixed as is remote add.
 # git remote add orign https://github.com/cephalotus/avrbuddy.git (uses ssh as transport)
+# steve@heggood.com:~geminiARMY
 #
 push:
 	git push -u origin master

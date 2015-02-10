@@ -72,8 +72,7 @@ main(int argc, char* argv[])
 	for(;;)
 	{
 	FILE *pp;
-	char cmd[512];
-
+	char cmd[1024];
 		ipcLog("Waiting for Message\n");
 		// wait for messages or signals
 		msg=ipcRecvMessage(msqid, pid);
@@ -101,38 +100,40 @@ main(int argc, char* argv[])
 			if(chdir(aa[1])<0)
 			{
 				sprintf(buf,"cd failed: %s",strerror(errno));
-				ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,buf);
+				ipcSendMessage(pid,msqid,msg->rsvp,C_ERR,buf);
 			}
-			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
+			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"cd Ok");
 			continue;
 		}
+
 		if((pp=popen(cmd,"r"))==NULL)
 		{
+			// uh oh
 			sprintf(buf,"popen(%s) failed: %s\n",cmd,strerror(errno));
 			ipcLog("%s",buf);
-
-			// uh oh
-			ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,buf);
-			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
+			ipcSendMessage(pid,msqid,msg->rsvp,C_ERR,buf);
 		}
 
-		while(fgets(buf, sizeof(buf), pp)!=NULL)
+		while(fgets(buf,sizeof(buf),pp)!=NULL)
 		{
 			// insulate from interrupt system calls
-			if(errno && errno==EINTR) continue;
-
-			ipcLog("<< %s\n",buf);
-
+			if(errno && errno==EINTR) 
+			{
+				ipcLog("fgets Interrupted!\n");
+				continue;
+			}
 			// strip the newline
 			buf[strlen(buf)-1]='\0';
 
-			// return message to requestor
-			ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,buf);
+			// ipcLog("<< %s\n",buf);
+
+			ipcAddText(pid,msg->rsvp,buf); // from pid, to pid, text
 		}
 
+		// close the pipe to command
 		fclose(pp);
 
 		// that's all folks
-		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
+		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"Success");
 	}
 }

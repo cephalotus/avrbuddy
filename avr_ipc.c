@@ -9,8 +9,17 @@ int
 , slot
 ;
 
+static int debug=0;
+
 IPC_HEAD *ipc_head;
 IPC_DICT *ipc_dict;
+IPC_TEXT *ipc_text;
+
+void // signal handler
+sigAlarm(int sig)
+{
+	// do nothing
+}
 
 // Common Exit Point for all processes
 void
@@ -68,7 +77,7 @@ int ix, sz;
 	ipc_dict[slot].online=time(0);
 	strcpy(ipc_dict[slot].stype,ipcTypeName(ptype));
 
-	ipcLog("Acquired Vacant IPC Slot %d Pid:%d Type:%s\n"
+	debug&&ipcLog("Acquired Vacant IPC Slot %d Pid:%d Type:%s\n"
 	, slot
 	, ipc_dict[slot].pid
 	, ipc_dict[slot].stype
@@ -78,43 +87,12 @@ int ix, sz;
 }
 
 int
-ipcGetPidByType(int type)
-{
-int slot;
-	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
-	{
-		if(type==ipc_dict[slot].type) return ipc_dict[slot].pid;
-	}
-}
-
-int
-ipcGetSlotByType(int type)
-{
-int slot;
-	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
-	{
-		if(type==ipc_dict[slot].type) return slot;
-	}
-	return -1;
-}
-
-int
-ipcGetSlotByPid(pid_t pid)
-{
-int slot;
-	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
-	{
-		if(pid==ipc_dict[slot].pid) return slot;
-	}
-	return -1;
-}
-
-int
 ipcAllocSharedMemory(pid_t pid, int ptype, const char *token)
 {
 char *mem, *shmat();
 key_t key;
-int sz, flags=0;
+int flags=0;
+unsigned long sz;
 
 	// if there is no token file create it
 	if(access(token,0)) fclose(fopen(token,"w"));
@@ -128,10 +106,10 @@ int sz, flags=0;
 	// only lead process creates a segment
 	if(ptype==P_ROOT) flags=IPC_CREAT|0666;
 
-	/* get enough shared memory for MAX_IPC Links (devined in avr.h)*/
-	sz=sizeof(IPC_DICT)*MAX_IPC+sizeof(IPC_HEAD);
+	/* get enough shared memory for MAX_IPC Links MAX_LINE, & IPC_HEAD (devined in avr.h)*/
+	sz=(sizeof(IPC_HEAD)+sizeof(IPC_DICT)*MAX_IPC)+(sizeof(IPC_TEXT)*MAX_TEXT);
 
-	//ipcLog("shmget(key=%d,bytes=%d,flags=%x) token=%s\n",key,sz,flags,token);
+	debug&&ipcLog("shmget(key=%d,bytes=%d,flags=%x) token=%s\n",key,sz,flags,token);
 
 	if((shmid=shmget(key,sz,flags))<0)
 	{
@@ -156,18 +134,16 @@ int sz, flags=0;
 		memset(mem,0,sz);
 	}
 
-	// cast memory as an array of IPC_DICT structures
-	sz-=sizeof(IPC_DICT);
+	// cast memory as an array of IPC_DICT, etc structures
+	ipc_head=(IPC_HEAD *)mem;
+	mem+=sizeof(IPC_HEAD);
 	ipc_dict=(IPC_DICT *)mem;
-	ipc_head=(IPC_HEAD *)&mem[sz];
-	if(ptype==P_ROOT)
-	{
-		ipc_head->proot=pid;
-	}
+	mem+=sizeof(IPC_DICT)*MAX_IPC;
+	ipc_text=(IPC_TEXT *)mem;
 
-	ipcLog("head-root : %d\n",ipc_head->proot);
-	ipcLog("head-txmsg: %d\n",ipc_head->txmsg);
-	ipcLog("head-rxmsg: %d\n",ipc_head->rxmsg);
+	debug&&ipcLog("head-root : %d\n",ipc_head->proot);
+	debug&&ipcLog("head-txmsg: %d\n",ipc_head->txmsg);
+	debug&&ipcLog("head-rxmsg: %d\n",ipc_head->rxmsg);
 
 	return 0;
 }
@@ -235,30 +211,27 @@ ipcGetMessageQueue(pid_t pid, int ptype, char *token)
 }
 
 int
-ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
+ipcSendMessage(pid_t pid, int msqid, long addr, int cmd, char *txt)
 {
 	MSG_BUF msg;
 	int msgflg;
 	
-	// mtype should be the pid of the receiver
+	// addr should be the pid of the receiver
 	msg.rsvp = pid;
 	msg.slot = slot; // global per process
-	msg.type = mtype; 
+	msg.type = addr; 
 	msg.cmd  = cmd; 
 	msg.len  = sizeof(msg)-sizeof(long);
 	msgflg   = 0;
 	strcpy(msg.scmd,ipcCmdName(cmd));
 	strcpy(msg.text,txt);
 
-
-#ifdef DEBUG
-	ipcLog("Send TO_ADDR: %d FROM_ADDR: %d\n",mtype,msg.rsvp);
-	ipcLog("msqid %d\n",msqid);
-	ipcLog("msg.len %d\n",msg.len);
-	ipcLog("msgflg %d\n",msgflg);
-	ipcLog("msg.scmd %s\n",msg.scmd);
-	ipcLog("msg.text %s\n",msg.text);
-#endif
+	debug&&ipcLog("Sending (%s) -> TO: %d (%s) [%s]\n"
+	, ipcCmdName(cmd)
+	, addr
+	, ipcTypeNameByPid(addr)
+	, msg.text
+	);
 
 	for(;;) 
 	{
@@ -269,6 +242,7 @@ ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
 			// don't let intrrupted system call screw us
 			if(errno!=EINTR) return errno;
 		}
+			debug&&ipcLog("Sent OK\n");
 		ipc_head->txmsg++;
 		return 0;
 	}
@@ -321,7 +295,7 @@ ipcCleanMessageQueue(int msqid)
 	int mtype=0;
 	int msgflg=IPC_NOWAIT;
 
-	ipcLog("msgrcv(msqid=%d,size=%d,mtype=%d,msgflg=%02x)\n"
+	debug&&ipcLog("msgrcv(msqid=%d,size=%d,mtype=%d,msgflg=%02x)\n"
 	, msqid
 	, size
 	, mtype
@@ -342,32 +316,89 @@ ipcRecvMessage(int msqid, pid_t pid)
 	size_t size=sizeof(msg)-sizeof(long);
 	int msgflg=0;  // may add later if need for selective IPC_NOWAIT arises
 	int mtype=pid;
-#ifdef DEBUG
-	ipcLog("RSVP_ADDR: %d msgrcv(msqid=%d,msg=%x,size=%d,mtype=%d,msgflg=%d)\n"
-	, pid
-	, msqid
-	, msg
-	, size
-	, mtype
-	, msgflg
-	);
-#endif
+	int i;
 
-	for(;;) 
+	debug&&ipcLog("%d %s Recieving -- \n"
+	, pid
+	, ipcTypeNameByPid(pid)
+	);
+
+	for(i=0 ;; i++) 
 	{
 		// man: ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp, int msgflg);
 		if(msgrcv(msqid,&msg,size,mtype,msgflg)<0) 
 		{
 			ipcLog("msgrcv failed ERROR: %s\n",strerror(errno));
 			// don't let intrrupted system call screw us
-			if(errno!=EINTR) return NULL;
+			if(errno!=EINTR) 
+			{
+				ipcLog("Receiving --  Interrupt count=%d\n",i+1);
+				if(i>2)
+				{
+					ipcLog("Receiveing -- Too Many retries\n");
+					return NULL;
+				}
+			}
 		}
-		//ipcLog("Message From:[%d] Cmd:[%s] Txt:[%s]\n",msg.rsvp,ipcCmdName(msg.cmd),msg.text);
+
+		debug&&ipcLog("Message From:[%d] Cmd:[%s] Txt:[%s]\n",msg.rsvp,ipcCmdName(msg.cmd),msg.text);
 
 		// increment system message receive count
 		ipc_head->rxmsg++;
 		return &msg;
 	}
+}
+
+
+int
+ipcAddText(pid_t from_pid, pid_t to_pid, const char *text)
+{
+int i; 
+	for(i=0; i<MAX_TEXT; i++)
+	{
+		// look for vacant text slot
+		if(ipc_text[i].from_pid) continue;
+
+		// fill the structure
+		ipc_text[i].from_pid=from_pid;
+		ipc_text[i].to_pid=to_pid;
+		strcpy(ipc_text[i].text,text);
+
+		debug&&ipcLog("Added text: %d->%d [%s]\n"
+		, ipc_text[i].from_pid
+		, ipc_text[i].to_pid
+		, ipc_text[i].text
+		);
+
+		debug&&ipcLog("Saved [%s] in text slot %d\n",text,i);
+		return 0;
+	}
+	ipcLog("No empty text slots!\n");
+	return -1;
+}
+
+IPC_TEXT *
+ipcGetText(pid_t from_pid, pid_t to_pid)
+{
+int i;
+	debug&&ipcLog("Scanning Text messges %d->%d\n",from_pid,to_pid);
+	for(i=0; i<MAX_TEXT; i++)
+	{
+		// look for vacant one
+		if(ipc_text[i].from_pid==from_pid 
+		&& ipc_text[i].to_pid==to_pid)
+		{
+			debug&&ipcLog("ix:%d %d->%d > %s\n"
+			, i
+			, ipc_text[i].from_pid
+			, ipc_text[i].to_pid
+			, ipc_text[i].text
+			);
+			return &ipc_text[i];
+		}
+	}
+	debug&&ipcLog("No Text messges found!\n");
+	return NULL;
 }
 
 void
@@ -390,6 +421,51 @@ char *str;
 	, slot
 	);
 	ipcSendMessage(pid, qid, root_pid, C_LOGIN, msg);
+}
+
+int
+ipcGetPidByType(int type)
+{
+int slot;
+	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
+	{
+		if(type==ipc_dict[slot].type) return ipc_dict[slot].pid;
+	}
+}
+
+int
+ipcGetSlotByType(int type)
+{
+int slot;
+	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
+	{
+		if(type==ipc_dict[slot].type) return slot;
+	}
+	return -1;
+}
+
+int
+ipcGetSlotByPid(pid_t pid)
+{
+int slot;
+	for(slot=0; slot<MAX_IPC && ipc_dict[slot].pid; slot++)
+	{
+		if(pid==ipc_dict[slot].pid) return slot;
+	}
+	return -1;
+}
+
+char * 
+ipcTypeNameByPid(pid_t pid)
+{
+	int slot, type;
+	if((slot=ipcGetSlotByPid(pid))<0)
+	{
+		return "UNK?";
+	}
+
+	// point to the slot
+	return(ipcTypeName(ipc_dict[slot].type));
 }
 
 char *
@@ -421,6 +497,7 @@ ipcCmdName(int cmd)
 	case C_EOF		: return "C_EOF";
 	case C_SQL		: return "C_SQL";
 	case C_SYS		: return "C_SYS";
+	case C_ERR		: return "C_ERR";
 	default			: return "C_UNK";
 	}
 }

@@ -51,11 +51,7 @@ int i;
 	}
 	ipcLog("\n");
 
-	ipcLog("SENDING ACK Message: %s\n",reply);
-	ipcSendMessage(pid,msqid,rsvp,C_ACK,reply);
-
-	ipcLog("SENDING EOF Message: %s\n","");
-	ipcSendMessage(pid,msqid,rsvp,C_EOF,"");
+	ipcAddText(pid,rsvp,reply); // from pid, to pid, text
 	return 0;
 }
 
@@ -112,9 +108,10 @@ main(int argc, char* argv[])
 
 		ipcLog("Processing Cannot Continue, Waiting to be killed...\n");
 
-		// send message to ROOT
+		// send message to P_ROOT
 		ipcLog("FAIL=%d\n",C_FAIL);
 		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
+
 		// wait for ROOT to kill us
 		pause();
 	}
@@ -123,17 +120,19 @@ main(int argc, char* argv[])
 
 	for(;;) // until we get SIGTERM
 	{
+	char err_buf[81];
 		/* wait for messages or signals */
-		msg=ipcRecvMessage(msqid, pid);
+		msg=ipcRecvMessage(msqid,pid);
 		rsvp=msg->rsvp;
 
 		ipcLog("Message From %d [%s] \n",msg->rsvp,msg->text);
 
 		// Execute SQL statement
-		if((rc=sqlite3_exec(db, msg->text, callback, 0, &zErrMsg)) != SQLITE_OK )
+		if((rc=sqlite3_exec(db,msg->text,callback,0,&zErrMsg))!=SQLITE_OK )
 		{
 			ipcLog("SQL error: %s\n", zErrMsg);
-			ipcSendMessage(pid,msqid,msg->rsvp,C_ACK,zErrMsg);
+			sprintf(err_buf,"Sqlite Error: %s",zErrMsg);
+			ipcAddText(pid,rsvp,err_buf); // from pid, to pid, text
 		}
 		else
 		{
