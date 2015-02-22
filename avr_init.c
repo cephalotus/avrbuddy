@@ -66,7 +66,7 @@ pid_t cpid;
 		ipcLog("No Slots Occupied by Sub-Processes\n");
 	}
 
-	ipcLog("Freeing Shared Memory segment\n");
+	ipcLog("Freeing Shared Memory segment pid:%d\n",pid);
 	ipcFreeSharedMem(pid);
 
 	ipcLog("Getting Queue Status, id=%d\n",msqid);
@@ -77,6 +77,9 @@ pid_t cpid;
 
 	ipcLog("Removing Message Queue, id=%d\n",msqid);
 	ipcRemoveMsgQueue(msqid);
+
+	ipcLog("Removing Semaphore, id=%d\n",semid);
+	ipcRemoveSemaphore(semid);
 
 	// we should be the last one standing.
 	ipcExit(pid,0,0);
@@ -89,7 +92,6 @@ char ib[128], fn[41];
 
 FILE *fp;
 MSG_BUF *msg;
-int pid;
 
 	/* divorce ourselves from the process
 	** group that we started in so that
@@ -107,10 +109,13 @@ int pid;
 	ipcLog("PID %d Starting Avr Application Group!\n",pid);
 
 
-	ipc_slot=ipcGetSharedMemory(pid,P_ROOT,"/tmp/ipc_application");
+	// ipc_slot=ipcGetSharedMemory(pid,P_ROOT,"/tmp/ipc_application");
+	ipc_slot=ipcGetIpcResources(pid,P_ROOT,"/tmp/ipc_application");
+
 	ipcLog("Shared Memory at %x slot=%d\n",ipc_dict,ipc_slot);
 
-	msqid=ipcGetMessageQueue(pid,P_ROOT,"/tmp/ipc_application");
+	//msqid=ipcGetMessageQueue(pid,P_ROOT,"/tmp/ipc_application");
+	//semid=ipcGetSemaphore(pid,P_ROOT,"/tmp/ipc_application");
 
 	sprintf(fn,"%s/avr.config",libdir);
 

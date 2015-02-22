@@ -55,11 +55,11 @@ main(int argc, char* argv[])
 	ipcLog("Chdir: %s\n",strerror(errno));
 
 	/* pick up shared memory environment */
-	slot=ipcGetSharedMemory(pid,P_SYSTEM,"/tmp/ipc_application");
+	slot=ipcGetIpcResources(pid,P_SYSTEM,"/tmp/ipc_application");
 	//ipcLog("Got memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
-	msqid=ipcGetMessageQueue(pid,P_SYSTEM,"/tmp/ipc_application");
+	//msqid=ipcGetMessageQueue(pid,P_SYSTEM,"/tmp/ipc_application");
 
 	// notify root process we are here
 	ipcNotify(pid,msqid);

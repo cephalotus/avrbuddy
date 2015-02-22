@@ -1,15 +1,28 @@
 #include "avr.h"
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <sys/sem.h>
  
-long shmid;
+long 
+  shmid
+, msqid
+, semid
+;
 
 int 
-  msqid
-, slot
+  slot
 ;
 
 static int debug=0;
+
+/* defined in sem.h
+struct sembuf 
+{
+	short sem_num;        // semaphore number
+	short sem_op;         // semaphore operation 
+	short sem_flg;        // operation flags
+};
+*/
 
 IPC_HEAD *ipc_head;
 IPC_DICT *ipc_dict;
@@ -39,8 +52,21 @@ ipcExit(pid_t pid, int err, int sig)
 	exit(err); 
 }
 
+int // returns ipc_slot
+ipcGetIpcResources(pid_t pid, int ptype, char *token)
+{
+	int slot=ipcGetSharedMemory(pid, ptype, token);
+	ipcGetMessageQueue(pid, ptype, token);
+	ipcGetSemaphore(pid, ptype, token);
+
+	// make sure semaphore is free on creation
+	if(ptype==P_ROOT) ipcSemRelease();
+
+	return slot;
+}
+
 int
-ipcGetSharedMemory(pid_t pid, int ptype, const char *token)
+ipcGetSharedMemory(pid_t pid, int ptype, char *token)
 {
 int ix, sz;
 
@@ -87,22 +113,16 @@ int ix, sz;
 }
 
 int
-ipcAllocSharedMemory(pid_t pid, int ptype, const char *token)
+ipcAllocSharedMemory(pid_t pid, int ptype, char *token)
 {
 char *mem, *shmat();
 key_t key;
 int flags=0;
 unsigned long sz;
 
-	// if there is no token file create it
-	if(access(token,0)) fclose(fopen(token,"w"));
+	if((key=ipcGetIpcKey(pid,token))<0)
+		return key;
 
-	// use ftok on a file to generate the key
-	if((key=ftok(token,1))<0) 
-	{
-		ipcLog("ftok(%s) failed ERROR: %s\n",token,strerror(errno));
-		ipcExit(pid,errno,0);
-	}
 	// only lead process creates a segment
 	if(ptype==P_ROOT) flags=IPC_CREAT|0666;
 
@@ -170,23 +190,86 @@ int slot;
 	ipcLog("Vacated ipc slot: %d for pid: %d\n",slot,pid);
 }
 
-int 
-ipcGetMessageQueue(pid_t pid, int ptype, char *token)
+
+long
+ipcGetSemaphore(pid_t pid, int ptype, char *token)
 {
-	int flags=0;
-	int msqid;
-	key_t key;
+key_t key;
+int flags=0;
 
-	//ipcLog("getMessageQueueue(%d,%d,%s)\n",pid,ptype,token);
+	if((key=ipcGetIpcKey(pid,token))<0)
+		return key;
 
-	// if there is no file create it
+	if(ptype==P_ROOT)
+	{
+		flags=IPC_CREAT|0666;
+	}
+
+	if((semid=semget(key,1,flags))<0)
+	{
+		ipcLog("Can't get semaphore for key %d errno:%d\n",key,errno);
+		ipcExit(pid,errno,0);
+	}
+	return semid;
+}
+
+
+
+int 
+ipcSemRelease()
+{
+struct sembuf sem_release = { 0, 1, IPC_NOWAIT };
+
+	debug&&ipcLog("ipcSemRelease() -- releasing\n");
+	if(semop(semid,&sem_release,1)<0)
+	{ 
+		ipcLog("SemRelease semop failed ERROR: %s\n",strerror(errno));
+		return errno;
+	} 
+	debug&&ipcLog("ipcSemRelease() success\n");
+}
+
+int 
+ipcSemLock()
+{
+struct sembuf sem_lock = { 0, -1, SEM_UNDO };
+
+	debug&&ipcLog("ipcSemLock() -- Locking\n");
+	if(semop(semid,&sem_lock,1)<0)
+	{ 
+		ipcLog("SemLock semop failed ERROR: %s\n",strerror(errno));
+		return errno;
+	} 
+	debug&&ipcLog("ipcSemLock() success\n");
+}
+
+key_t
+ipcGetIpcKey(pid_t pid, char *token)
+{
+key_t key;
+
 	if(access(token,0)) fclose(fopen(token,"w"));
 
 	if((key=ftok(token,1))<0) 
 	{
 		ipcLog("ftok failed ERROR: %s\n",strerror(errno));
-		return errno;
+		ipcExit(pid,errno,0);
 	}
+	return key;
+}
+
+int 
+ipcGetMessageQueue(pid_t pid, int ptype, char *token)
+{
+	int flags=0;
+	key_t key;
+
+	//ipcLog("getMessageQueueue(%d,%d,%s)\n",pid,ptype,token);
+
+	// if there is no file create it
+
+	if((key=ipcGetIpcKey(pid,token))<0)
+		return key;
 
 	if(ptype==P_ROOT)
 	{
@@ -203,7 +286,7 @@ ipcGetMessageQueue(pid_t pid, int ptype, char *token)
 
 	if((msqid=msgget(key,flags))<0) 
 	{
-		ipcLog("ftok failed ERROR: %s\n",strerror(errno));
+		ipcLog("msgget failed ERROR: %s\n",strerror(errno));
 		return errno;
 	}
 	//ipcLog("getMessageQueueue() got msqid=%d\n",msqid);
@@ -288,6 +371,17 @@ ipcRemoveMsgQueue(int msqid)
 }
 
 int
+ipcRemoveSemaphore(semid)
+{
+	if(semctl(semid,1,IPC_RMID)<0) 
+	{
+		ipcLog("semctl IPC_RMID failed on semid:%d ERROR: %s\n",semid,strerror(errno));
+		return errno;
+	}
+	return 0;
+}
+
+int
 ipcCleanMessageQueue(int msqid)
 {
 	MSG_BUF msg;
@@ -359,10 +453,14 @@ int i;
 		// look for vacant text slot
 		if(ipc_text[i].from_pid) continue;
 
+		ipcSemLock();
+
 		// fill the structure
 		ipc_text[i].from_pid=from_pid;
 		ipc_text[i].to_pid=to_pid;
 		strcpy(ipc_text[i].text,text);
+
+		ipcSemRelease();
 
 		debug&&ipcLog("Added text: %d->%d [%s]\n"
 		, ipc_text[i].from_pid

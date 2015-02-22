@@ -18,7 +18,7 @@ LDFLAGS=-lrt
 BIN=/home/yun/bin/
 #determine which sqlite3 library to use
 CPU=$(shell uname -m)
-ifeq "$(CPU)" "i686"
+ifeq "$(CPU)" "x86_64"
 	SQLITE_LIB=-lsqlite3
 else
 	SQLITE_LIB=/usr/lib/libsqlite3.a -ldl -lpthread

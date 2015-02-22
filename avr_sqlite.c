@@ -88,11 +88,11 @@ main(int argc, char* argv[])
 	}
 
 	/* pick up shared memory environment */
-	slot=ipcGetSharedMemory(pid,P_SQLITE,"/tmp/ipc_application");
+	slot=ipcGetIpcResources(pid,P_SQLITE,"/tmp/ipc_application");
 	//ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
-	msqid=ipcGetMessageQueue(pid,P_SQLITE,"/tmp/ipc_application");
+	//msqid=ipcGetMessageQueue(pid,P_SQLITE,"/tmp/ipc_application");
 
 	// tell root process we are here
 	ipcNotify(pid,msqid);

@@ -81,11 +81,11 @@ IPC_DICT *d;
 	ipcLog("Starting P_TTY process!\n");
 
 	/* pick up shared memory environment */
-	slot=ipcGetSharedMemory(pid,P_TTY,"/tmp/ipc_application");
+	slot=ipcGetIpcResources(pid,P_TTY,"/tmp/ipc_application");
 	ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
-	msqid=ipcGetMessageQueue(pid,P_TTY,"/tmp/ipc_application");
+	//msqid=ipcGetMessageQueue(pid,P_TTY,"/tmp/ipc_application");
 
 	/* process command line options */
 	if(getOptions(argv)<0)

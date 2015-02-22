@@ -92,6 +92,11 @@ typedef struct
 	char text[256]; 
 } MSG_BUF
 ;
+
+extern MSG_BUF
+  *recvMessage(int msqid, long mtype)
+;
+
 typedef struct 
 {
 	int  from_pid;
@@ -105,8 +110,6 @@ extern IPC_TEXT
 , *ipcGetText(pid_t from_pid, pid_t to_pid)
 ;
 
-MSG_BUF *recvMessage(int msqid, long mtype);
-
 typedef unsigned char BYTE;
 
 extern char 
@@ -116,8 +119,7 @@ extern char
 ;
 
 extern int
-  msqid
-, ipc_dlev
+  ipc_dlev
 , ipc_dup
 , ipcAddText(pid_t from_pid, pid_t to_pid, const char *text)
 , ipcLog(const char *format, ...)
@@ -125,11 +127,12 @@ extern int
 , ipcDetail(const char* format, ...)
 , ipcSysError(const char *fmt,...)
 , ipcDebug(int lev, const char*format,...)
-, ipcGetSharedMemory(pid_t pid, int ptype, const char *token)
+, ipcGetIpcResources(pid_t pid, int ptype, char *token)
+, ipcGetSharedMemory(pid_t pid, int ptype, char *token)
 , ipcGetPidByType(int type)
 , ipcGetSlotByType(int type)
 , ipcGetSlotByPid(pid_t pid)
-, ipcAllocSharedMemory(pid_t pid, int ptype, const char *token)
+, ipcAllocSharedMemory(pid_t pid, int ptype, char *token)
 , ipcGetMessageQueue(pid_t pid, int ptype, char *token)
 , ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
 , ipcCleanMessageQueue(int msqid)
@@ -137,7 +140,12 @@ extern int
 
 ;
 
-extern long shmid; // from avr_ipc.c
+extern long // from avr_ipc.c
+  shmid 
+, msqid
+, semid
+, ipcGetSemaphore(pid_t pid, int ptype, char *token)
+;
 
 // each main declares his own global, main links to us
 extern IPC_DICT *ipc_dict;
