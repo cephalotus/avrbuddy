@@ -38,7 +38,7 @@ void // signal handler
 ttyTerminate(int sig)
 {
 int status;
-	ipcLog("Proc %d P_TTY Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
+	ipcLog("Proc %d P_TTY Terminiate Requested SIG: %s!\n",pid,ipcSigName(sig));
 	/*
 	if(cpid)
 	{
@@ -67,9 +67,6 @@ IPC_DICT *d;
 
 	signal(SIGINT,SIG_IGN);
 	signal(SIGTERM,ttyTerminate);
-
-	ppid=getppid(); 
-	pid=getpid();
 
 	/*set up application logging */
 	logOpen(basename(device));

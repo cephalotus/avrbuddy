@@ -2,17 +2,23 @@
 #include <termio.h>
 #include <fcntl.h>
 
+#define M_MON 1
+#define M_SYS 2
+#define M_SQL 3
+
 static pid_t cpid;
 
 extern IPC_DICT *ipc_dict;
 static IPC_DICT *dict;
 
 static struct termio tty;
+char *prompt="mon";
+int mode=M_MON;
 
 void // signal handler
 shellTerminate(int sig)
 {
-	ipcLog("Proc %d P_MON Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
+	ipcLog("Proc %d P_MON Terminiate Requested SIG: %s!\n",pid,ipcSigName(sig));
 	ipcExit(0,0);
 }
 
@@ -31,9 +37,6 @@ int cnt, c, x, i;
 
 	signal(SIGINT, shellTerminate);
 	signal(SIGTERM,shellTerminate);
-
-	ppid=getppid(); 
-	pid=getpid();
 
 	/* set up application logging */
 	logOpen("mon");
@@ -87,7 +90,7 @@ int cnt, c, x, i;
 
 		for(;;)
 		{
-			printf("<mon>$ ");
+			printf("<%s>$ ",prompt);
 			fgets(buf, sizeof(buf), stdin);
 			buf[strlen(buf)-1]='\0';
 
@@ -96,46 +99,31 @@ int cnt, c, x, i;
 			;;
 			*s++='\0';
 			arg=s;
+
 			if(!strcmp(cmd,"exit")||!strcmp(cmd,"quit"))
 			{
 				printf("Goodbye!\n");
 				shellTerminate(0);
 			}
-			else if(!strcmp(cmd,"help")) 	doHelpCommand();
-			else if(!strcmp(cmd,"sql")) 	doMessageCommand(C_SQL,arg);
+				 if(!strcmp(cmd,"help")) 	doHelpCommand();
 			else if(!strcmp(cmd,"ps")) 		doPsCommand();
-			else if(!strcmp(cmd,"sys")) 	doMessageCommand(C_SYS,arg);
 			else if(!strcmp(cmd,"kill")) 	doKillCommand(arg);
 			else if(!strcmp(cmd,"start")) 	doStartCommand(arg);
-			else if(!strcmp(cmd,"log")) 	doLogCommand(arg);
-			else if(!strcmp(cmd,"txt")) 	doTxtCommand(arg);
-			else 
-			{
-				char tb[1024];
-				sprintf(tb,"%s %s",cmd,arg);
-				//printf("Trying shell command %s\n",tb);
-				doMessageCommand(C_SYS,tb);
-			}
+			else if(!strcmp(cmd,"sql")) 	doMessageCommand(C_SQL,arg);
+			else if(!strcmp(cmd,"sys")) 	doMessageCommand(C_SYS,arg);
+			else printf("Invalid Command\n");
+			/*
+			char tb[1024];
+			sprintf(tb,"%s %s",cmd,arg);
+			printf("Trying shell command %s\n",tb);
+			doMessageCommand(C_SYS,tb);
+			*/
 		}
 		// we should put some code in here
 		// to implement protocol for avr sketches
-		//ipcDebug(50,"<<[%02d]< %02x\n",i,buf[i]);
+		// ipcDebug(50,"<<[%02d]< %02x\n",i,buf[i]);
 
-		ipcLog("CP: buf[%02d]< %02x\n",i,buf[i]);
-	}
-}
-
-doTxtCommand()
-{
-int i;
-	for(i=0; i<MAX_TEXT; i++)
-	{
-		if(!ipc_text[i].from_pid) continue;
-		printf("pid:%d->%d  txt:%s\n"
-		, ipc_text[i].from_pid
-		, ipc_text[i].to_pid
-		, ipc_text[i].text
-		);
+		// ipcLog("CP: buf[%02d]< %02x\n",i,buf[i]);
 	}
 }
 
@@ -235,10 +223,29 @@ doMessageCommand(int cmd, char *arg)
 {
 	switch(cmd)
 	{
-	case C_SQL: getMessageReply(P_SQLITE,cmd,arg);
+	case C_SQL: 
+		if(arg)
+		{
+			getMessageReply(P_SQLITE,cmd,arg);
+		}
+		else
+		{
+			mode=cmd;
+			prompt="sql";
+		
+		}
 		break;
 
-	case C_SYS: getMessageReply(P_SYSTEM,cmd,arg);
+	case C_SYS: 
+		if(arg)
+		{
+			getMessageReply(P_SYSTEM,cmd,arg);
+		}
+		else
+		{
+			mode=cmd;
+			prompt="sys";
+		}
 		break;
 	}
 }
@@ -265,7 +272,7 @@ char com_buf[256];
 	signal(SIGALRM,shellTimeout); alarm(2);
 
 	// wait for reply or signal
-	msg=ipcRecvMessage(msqid, pid);
+	msg=ipcRecvMessage();
 
 	alarm(0);
 

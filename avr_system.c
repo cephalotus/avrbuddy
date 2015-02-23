@@ -51,7 +51,7 @@ main(int argc, char* argv[])
 	char cmd[1024];
 		ipcLog("Waiting for Message\n");
 		// wait for messages or signals
-		msg=ipcRecvMessage(msqid, pid);
+		msg=ipcRecvMessage();
 
 		d=&ipc_dict[msg->slot];
 
@@ -71,6 +71,11 @@ main(int argc, char* argv[])
 
 		// make an array for execvp
 		aa=ipcSplit(msg->text,' ');
+		if(!aa[0])
+		{
+			ipcSendMessage(msg->rsvp,C_ERR,"No cmd line argument!");
+			continue;
+		}
 		if(!strcmp(aa[0],"cd"))
 		{
 			if(chdir(aa[1])<0)

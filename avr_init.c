@@ -143,7 +143,7 @@ MSG_BUF *msg;
 
 		//ipcLog("Waiting for Message\n");
 		// wait for messages or signals
-		msg=ipcRecvMessage(msqid, pid);
+		msg=ipcRecvMessage();
 
 		// point to sender's dictionary entry
 		d=&ipc_dict[msg->slot];

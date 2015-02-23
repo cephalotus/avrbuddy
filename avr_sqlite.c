@@ -113,7 +113,7 @@ main(int argc, char* argv[])
 	{
 	char err_buf[81];
 		/* wait for messages or signals */
-		msg=ipcRecvMessage(msqid,pid);
+		msg=ipcRecvMessage();
 		rsvp=msg->rsvp;
 
 		ipcLog("Message From %d [%s] \n",msg->rsvp,msg->text);
