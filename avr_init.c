@@ -4,14 +4,6 @@ int
   debug_level
 ;
 
-static int 
-  prog_cnt
-, event_id
-, ipc_slot
-;
-
-static pid_t pid;
-
 IPC_DICT *ipc_dict;
 
 char *libdir="/home/yun/lib";
@@ -82,7 +74,7 @@ pid_t cpid;
 	ipcRemoveSemaphore(semid);
 
 	// we should be the last one standing.
-	ipcExit(pid,0,0);
+	ipcExit(0,0);
 }
 
 main(char **ac, int av)
@@ -102,15 +94,13 @@ MSG_BUF *msg;
 	daemonize();
 
 	// have to do this after daemonize because it forked!
-	pid=getpid();
+	// pid=getpid();
 
 	logOpen("init");
 
 	ipcLog("PID %d Starting Avr Application Group!\n",pid);
 
-
-	// ipc_slot=ipcGetSharedMemory(pid,P_ROOT,"/tmp/ipc_application");
-	ipc_slot=ipcGetIpcResources(pid,P_ROOT,"/tmp/ipc_application");
+	ipcGetIpcResources(P_ROOT,"/tmp/ipc_application");
 
 	ipcLog("Shared Memory at %x slot=%d\n",ipc_dict,ipc_slot);
 
@@ -150,7 +140,6 @@ MSG_BUF *msg;
 	{
 	IPC_DICT *d;
 	int status, cslot;
-	pid_t cpid;
 
 		//ipcLog("Waiting for Message\n");
 		// wait for messages or signals

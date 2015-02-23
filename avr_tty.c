@@ -22,10 +22,6 @@ static int
 , avrWrite(int, int, BYTE *)
 ;
 
-pid_t
-  pid
-, ppid
-;
 
 static char
   *device = "ttyATH0"
@@ -57,7 +53,7 @@ int status;
 		ipcLog("Child Process %d died With exit code=%d\n",cpid,WEXITSTATUS(status));
 	}
 	*/
-	ipcExit(pid,0,0);
+	ipcExit(0,0);
 }
 
 main(int argc, char *argv[])
@@ -81,7 +77,7 @@ IPC_DICT *d;
 	ipcLog("Starting P_TTY process!\n");
 
 	/* pick up shared memory environment */
-	slot=ipcGetIpcResources(pid,P_TTY,"/tmp/ipc_application");
+	slot=ipcGetIpcResources(P_TTY,"/tmp/ipc_application");
 	ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
 	dict=&ipc_dict[slot];
 
@@ -94,11 +90,11 @@ IPC_DICT *d;
 		, pid
 		, slot
 		);
-		ipcFatalExit(pid,"Processing Cannot Continue, Waiting to be killed...\n");
+		ipcFatalExit("Processing Cannot Continue, Waiting to be killed...\n");
 	}
 
 	// tell root process we are here
-	ipcNotify(pid,msqid);
+	ipcNotify(msqid);
 
 	ipcLog("P_TTY Process %d On-Line in slot %d\n"
 	, pid
@@ -109,7 +105,7 @@ IPC_DICT *d;
 	if((fd=devOpen(device))<0)
 	{
 		ipcLog("devOpen(%s) failure %s Error: %s\n",device,strerror(errno));
-		ipcFatalExit(pid,"Processing Cannot Continue, Waiting to be killed...\n");
+		ipcFatalExit("Processing Cannot Continue, Waiting to be killed...\n");
 	}
 
 	ipcLog("P_TTY Opened port=%s speed=%d dlev:%d\n",device,getSpeed(speed),avr_dlev);
@@ -131,7 +127,7 @@ IPC_DICT *d;
 
 			// send kill signal to parent process
 			kill(ppid,SIGTERM);
-			ipcExit(pid,errno,0);
+			ipcExit(errno,0);
 		}
 
 		ipcLog(">> [%02d][%02x][%c]\n",i,c,c);
@@ -170,12 +166,12 @@ IPC_DICT *d;
 				// send a message to the C_SQLITE process
 				int id=ipcGetPidByType(P_SQLITE);
 				ipcLog("Send --> from:%d to:%d\n",pid,id);
-				ipcSendMessage(pid, msqid, id, C_SQL, arg);
+				ipcSendMessage(id, C_SQL, arg);
 				ipcLog("Sent %s to pid:%d\n",arg,id);
 				ipcLog("Waiting for Reply\n");
 
 				// wait for reply or signal
-				msg=ipcRecvMessage(msqid, pid);
+				msg=ipcRecvMessage();
 
 				// point to sender's dictionary entry
 				d=&ipc_dict[msg->slot];
@@ -350,7 +346,7 @@ char *opt;
 				case 4000000	: speed = B4000000;	break;
 				default   		: 
 					ipcLog("%s not a legal speed\n",&av[i][2]);
-					ipcExit(pid,0,0);
+					ipcExit(0,0);
 				}
 				break;
 

@@ -9,8 +9,11 @@ long
 , semid
 ;
 
-int 
-  slot
+int ipc_slot;
+
+pid_t  // global for simplicity
+  pid
+, ppid
 ;
 
 static int debug=0;
@@ -36,7 +39,7 @@ sigAlarm(int sig)
 
 // Common Exit Point for all processes
 void
-ipcExit(pid_t pid, int err, int sig)
+ipcExit(int err, int sig)
 {
 	ipcLog("Process %d shutdown Exit code=%d [%s] Signal=%d\n"
 	, pid
@@ -52,30 +55,31 @@ ipcExit(pid_t pid, int err, int sig)
 	exit(err); 
 }
 
-int // returns ipc_slot
-ipcGetIpcResources(pid_t pid, int ptype, char *token)
+int 
+ipcGetIpcResources(int ptype, char *token)
 {
-	int slot=ipcGetSharedMemory(pid, ptype, token);
-	ipcGetMessageQueue(pid, ptype, token);
+	pid=getpid();
+	ppid=getppid();
+
+	ipcGetSharedMemory(ptype, token);
+	ipcGetMessageQueue(ptype, token);
 	ipcGetSemaphore(pid, ptype, token);
 
 	// make sure semaphore is free on creation
 	if(ptype==P_ROOT) ipcSemRelease();
-
-	return slot;
 }
 
 int
-ipcGetSharedMemory(pid_t pid, int ptype, char *token)
+ipcGetSharedMemory(int ptype, char *token)
 {
 int ix, sz;
 
 	//ipcLog("getshmem(pid:%d,token:%s)\n",pid,token);
 
-	if(ipcAllocSharedMemory(pid,ptype,token)!=0)
+	if(ipcAllocSharedMemory(ptype,token)!=0)
 	{
 		ipcLog("allocateSharedMemory Failed ERROR: %s\n",strerror(errno));
-		ipcExit(pid,errno,0);
+		ipcExit(errno,0);
 	}
 
 	// scan the dictionary for a spare slot, loop will break on vacant slot (pid=0)
@@ -91,29 +95,29 @@ int ix, sz;
 	if(ix==MAX_IPC)
 	{
 		ipcLog("No Application Dictionary Slots available %d Max\n",MAX_IPC);
-		ipcExit(pid,errno,0);
+		ipcExit(errno,0);
 	}
 
-	// slot is global
-	slot=ix;
+	// ipc_slot is global
+	ipc_slot=ix;
 
 	// assign initial values
-	ipc_dict[slot].pid=pid;
-	ipc_dict[slot].type=ptype;
-	ipc_dict[slot].online=time(0);
-	strcpy(ipc_dict[slot].stype,ipcTypeName(ptype));
+	ipc_dict[ipc_slot].pid=pid;
+	ipc_dict[ipc_slot].type=ptype;
+	ipc_dict[ipc_slot].online=time(0);
+	strcpy(ipc_dict[ipc_slot].stype,ipcTypeName(ptype));
 
 	debug&&ipcLog("Acquired Vacant IPC Slot %d Pid:%d Type:%s\n"
-	, slot
-	, ipc_dict[slot].pid
-	, ipc_dict[slot].stype
+	, ipc_slot
+	, ipc_dict[ipc_slot].pid
+	, ipc_dict[ipc_slot].stype
 	);
 
-	return slot;
+	return ipc_slot;
 }
 
 int
-ipcAllocSharedMemory(pid_t pid, int ptype, char *token)
+ipcAllocSharedMemory(int ptype, char *token)
 {
 char *mem, *shmat();
 key_t key;
@@ -134,7 +138,7 @@ unsigned long sz;
 	if((shmid=shmget(key,sz,flags))<0)
 	{
 		ipcLog("Can't get shared segment size %d for key %d errno:%d\n",sz,key,errno);
-		ipcExit(pid,errno,0);
+		ipcExit(errno,0);
 	}
 
 	if((mem=shmat(shmid,(char*)0,0))==(char *)-1L)
@@ -144,7 +148,7 @@ unsigned long sz;
 			shmctl(shmid,IPC_RMID,0);
 		}
 		ipcLog("Can't attatch to shared segment errno:%d\n",errno);
-		ipcExit(pid,errno,0);
+		ipcExit(errno,0);
 	}
 
 	// only avr_init process should do this 
@@ -208,17 +212,17 @@ int flags=0;
 	if((semid=semget(key,1,flags))<0)
 	{
 		ipcLog("Can't get semaphore for key %d errno:%d\n",key,errno);
-		ipcExit(pid,errno,0);
+		ipcExit(errno,0);
 	}
 	return semid;
 }
 
 
+static struct sembuf sem_release = { 0, 1, IPC_NOWAIT };
 
 int 
 ipcSemRelease()
 {
-struct sembuf sem_release = { 0, 1, IPC_NOWAIT };
 
 	debug&&ipcLog("ipcSemRelease() -- releasing\n");
 	if(semop(semid,&sem_release,1)<0)
@@ -229,10 +233,11 @@ struct sembuf sem_release = { 0, 1, IPC_NOWAIT };
 	debug&&ipcLog("ipcSemRelease() success\n");
 }
 
+static struct sembuf sem_lock = { 0, -1, SEM_UNDO };
+
 int 
 ipcSemLock()
 {
-struct sembuf sem_lock = { 0, -1, SEM_UNDO };
 
 	debug&&ipcLog("ipcSemLock() -- Locking\n");
 	if(semop(semid,&sem_lock,1)<0)
@@ -253,13 +258,13 @@ key_t key;
 	if((key=ftok(token,1))<0) 
 	{
 		ipcLog("ftok failed ERROR: %s\n",strerror(errno));
-		ipcExit(pid,errno,0);
+		ipcExit(errno,0);
 	}
 	return key;
 }
 
 int 
-ipcGetMessageQueue(pid_t pid, int ptype, char *token)
+ipcGetMessageQueue(int ptype, char *token)
 {
 	int flags=0;
 	key_t key;
@@ -294,14 +299,14 @@ ipcGetMessageQueue(pid_t pid, int ptype, char *token)
 }
 
 int
-ipcSendMessage(pid_t pid, int msqid, long addr, int cmd, char *txt)
+ipcSendMessage(long addr, int cmd, char *txt)
 {
 	MSG_BUF msg;
 	int msgflg;
 	
 	// addr should be the pid of the receiver
 	msg.rsvp = pid;
-	msg.slot = slot; // global per process
+	msg.slot = ipc_slot; // global per process
 	msg.type = addr; 
 	msg.cmd  = cmd; 
 	msg.len  = sizeof(msg)-sizeof(long);
@@ -360,7 +365,7 @@ ipcMessageStatus(int msqid)
 }
 
 int
-ipcRemoveMsgQueue(int msqid)
+ipcRemoveMsgQueue()
 {
 	if(msgctl(msqid,IPC_RMID,NULL)<0) 
 	{
@@ -371,7 +376,7 @@ ipcRemoveMsgQueue(int msqid)
 }
 
 int
-ipcRemoveSemaphore(semid)
+ipcRemoveSemaphore()
 {
 	if(semctl(semid,1,IPC_RMID)<0) 
 	{
@@ -382,7 +387,7 @@ ipcRemoveSemaphore(semid)
 }
 
 int
-ipcCleanMessageQueue(int msqid)
+ipcCleanMessageQueue()
 {
 	MSG_BUF msg;
 	size_t size=sizeof(msg)-sizeof(long);
@@ -404,12 +409,11 @@ ipcCleanMessageQueue(int msqid)
 
 
 MSG_BUF *
-ipcRecvMessage(int msqid, pid_t pid)
+ipcRecvMessage()
 {
 	static MSG_BUF msg;
 	size_t size=sizeof(msg)-sizeof(long);
 	int msgflg=0;  // may add later if need for selective IPC_NOWAIT arises
-	int mtype=pid;
 	int i;
 
 	debug&&ipcLog("%d %s Recieving -- \n"
@@ -420,7 +424,7 @@ ipcRecvMessage(int msqid, pid_t pid)
 	for(i=0 ;; i++) 
 	{
 		// man: ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp, int msgflg);
-		if(msgrcv(msqid,&msg,size,mtype,msgflg)<0) 
+		if(msgrcv(msqid,&msg,size,pid,msgflg)<0) 
 		{
 			ipcLog("msgrcv failed ERROR: %s\n",strerror(errno));
 			// don't let intrrupted system call screw us
@@ -445,7 +449,7 @@ ipcRecvMessage(int msqid, pid_t pid)
 
 
 int
-ipcAddText(pid_t from_pid, pid_t to_pid, const char *text)
+ipcAddText(pid_t to_pid, const char *text)
 {
 int i; 
 	for(i=0; i<MAX_TEXT; i++)
@@ -456,7 +460,7 @@ int i;
 		ipcSemLock();
 
 		// fill the structure
-		ipc_text[i].from_pid=from_pid;
+		ipc_text[i].from_pid=pid;
 		ipc_text[i].to_pid=to_pid;
 		strcpy(ipc_text[i].text,text);
 
@@ -468,7 +472,7 @@ int i;
 		, ipc_text[i].text
 		);
 
-		debug&&ipcLog("Saved [%s] in text slot %d\n",text,i);
+		debug&&ipcLog("Saved [%s] in text ipc_slot %d\n",text,i);
 		return 0;
 	}
 	ipcLog("No empty text slots!\n");
@@ -476,15 +480,15 @@ int i;
 }
 
 IPC_TEXT *
-ipcGetText(pid_t from_pid, pid_t to_pid)
+ipcGetText(pid_t from_pid)
 {
 int i;
-	debug&&ipcLog("Scanning Text messges %d->%d\n",from_pid,to_pid);
+	debug&&ipcLog("Scanning Text messges %d->%d\n",from_pid,pid);
 	for(i=0; i<MAX_TEXT; i++)
 	{
 		// look for vacant one
 		if(ipc_text[i].from_pid==from_pid 
-		&& ipc_text[i].to_pid==to_pid)
+		&& ipc_text[i].to_pid==pid)
 		{
 			debug&&ipcLog("ix:%d %d->%d > %s\n"
 			, i
@@ -500,7 +504,7 @@ int i;
 }
 
 void
-ipcNotify(pid_t pid, int qid)
+ipcNotify(pid_t pid)
 {
 static char msg[81];
 pid_t root_pid;
@@ -518,7 +522,7 @@ char *str;
 	, str
 	, slot
 	);
-	ipcSendMessage(pid, qid, root_pid, C_LOGIN, msg);
+	ipcSendMessage(root_pid, C_LOGIN, msg);
 }
 
 int

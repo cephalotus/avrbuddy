@@ -94,7 +94,7 @@ typedef struct
 ;
 
 extern MSG_BUF
-  *recvMessage(int msqid, long mtype)
+  *recvMessage(long mtype)
 ;
 
 typedef struct 
@@ -107,7 +107,7 @@ typedef struct
 
 extern IPC_TEXT 
   *ipc_text
-, *ipcGetText(pid_t from_pid, pid_t to_pid)
+, *ipcGetText(pid_t from_pid)
 ;
 
 typedef unsigned char BYTE;
@@ -118,26 +118,29 @@ extern char
 , **ipcSplit(char *s, char c)
 ;
 
+extern pid_t  // avr_ipc.c
+  pid
+, ppid
+;
+
 extern int
-  ipc_dlev
+  ipc_slot
+, ipc_dlev
 , ipc_dup
-, ipcAddText(pid_t from_pid, pid_t to_pid, const char *text)
+, ipcAddText(pid_t to_pid, const char *text)
 , ipcLog(const char *format, ...)
 , ipcRawLog(const char *format, ...)
 , ipcDetail(const char* format, ...)
 , ipcSysError(const char *fmt,...)
 , ipcDebug(int lev, const char*format,...)
-, ipcGetIpcResources(pid_t pid, int ptype, char *token)
-, ipcGetSharedMemory(pid_t pid, int ptype, char *token)
+, ipcGetIpcResources(int ptype, char *token)
 , ipcGetPidByType(int type)
 , ipcGetSlotByType(int type)
 , ipcGetSlotByPid(pid_t pid)
-, ipcAllocSharedMemory(pid_t pid, int ptype, char *token)
-, ipcGetMessageQueue(pid_t pid, int ptype, char *token)
-, ipcSendMessage(pid_t pid, int msqid, long mtype, int cmd, char *txt)
-, ipcCleanMessageQueue(int msqid)
-, ipcRemoveMsgQueue(int msqid)
-
+, ipcAllocSharedMemory(int ptype, char *token)
+, ipcSendMessage(long mtype, int cmd, char *txt)
+, ipcCleanMessageQueue()
+, ipcRemoveMsgQueue()
 ;
 
 extern long // from avr_ipc.c
@@ -150,15 +153,15 @@ extern long // from avr_ipc.c
 // each main declares his own global, main links to us
 extern IPC_DICT *ipc_dict;
 
-extern MSG_BUF *ipcRecvMessage(int msqid, pid_t pid);
+extern MSG_BUF *ipcRecvMessage();
 
-extern void ipcLogErrorWait(pid_t pid, const char*format,...);
+extern void ipcLogErrorWait(const char*format,...);
 
 extern void
   ipcFreeSharedMem(pid_t pid)
 , ipcClearSlot(pid_t pid)
-, ipcNotify(pid_t pid, int qid)
-, ipcExit(pid_t pid, int err, int sig)
+, ipcNotify(pid_t pid)
+, ipcExit(int err, int sig)
 , logClose()
 , initNotify()
 ;

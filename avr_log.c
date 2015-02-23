@@ -105,7 +105,7 @@ char tb[128];
 }
 
 void
-ipcFatalExit(pid_t pid, const char*format,...)
+ipcFatalExit(const char*format,...)
 {
 va_list args;
 char buf[256];
@@ -121,7 +121,7 @@ char buf[256];
 	, buf
 	);
 
-	ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
+	ipcSendMessage(ipc_dict[0].pid,C_FAIL,buf);
 	// wait to be killed
 	pause();
 }

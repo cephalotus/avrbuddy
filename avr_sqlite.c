@@ -5,11 +5,6 @@ static IPC_DICT *dict;
 static sqlite3 *db;
 static char *zErrMsg;
 
-int slot;
-pid_t
-  pid
-, ppid
-;
 static pid_t rsvp;
 
 // this can be changed with a command line aruement
@@ -24,7 +19,7 @@ dbDterminate(int sig)
 	ipcLog("P_SQLITE Terminiate Request! SIG: %s\n",ipcSigName(sig));
 	if(zErrMsg) sqlite3_free(zErrMsg);
 	if(db)      sqlite3_close(db);
-	ipcExit(getpid(),0,sig);
+	ipcExit(0,sig);
 }
 
 typedef int (*sqlite3_callback)
@@ -51,7 +46,7 @@ int i;
 	}
 	ipcLog("\n");
 
-	ipcAddText(pid,rsvp,reply); // from pid, to pid, text
+	ipcAddText(rsvp,reply); // to pid, text
 	return 0;
 }
 
@@ -66,10 +61,6 @@ main(int argc, char* argv[])
 
 	signal(SIGINT,SIG_IGN);
 	signal(SIGTERM,dbDterminate);
-
-	// set thes globally
-	ppid=getppid(); 
-	pid=getpid();
 
 	/*set up application logging */
 	logOpen("sqlite");
@@ -88,21 +79,21 @@ main(int argc, char* argv[])
 	}
 
 	/* pick up shared memory environment */
-	slot=ipcGetIpcResources(pid,P_SQLITE,"/tmp/ipc_application");
-	//ipcLog("Got Memory at %x slot=%d\n",ipc_dict,slot);
-	dict=&ipc_dict[slot];
+	ipcGetIpcResources(P_SQLITE,"/tmp/ipc_application");
+	//ipcLog("Got Memory at %x ipc_slot=%d\n",ipc_dict,ipc_slot);
+	dict=&ipc_dict[ipc_slot];
 
 	//msqid=ipcGetMessageQueue(pid,P_SQLITE,"/tmp/ipc_application");
 
 	// tell root process we are here
-	ipcNotify(pid,msqid);
+	ipcNotify(pid);
 
 	if((rc=sqlite3_open(yundb, &db))!=0)
 	{
 		ipcLog("Can't open database: %s ERROR:%s\n",yundb,sqlite3_errmsg(db));
 		sprintf(buf,"Process %d Slot %d %s"
 		, pid
-		, slot
+		, ipc_slot
 		, sqlite3_errmsg(db)
 		);
 
@@ -110,7 +101,7 @@ main(int argc, char* argv[])
 
 		// send message to P_ROOT
 		ipcLog("FAIL=%d\n",C_FAIL);
-		ipcSendMessage(pid,msqid,ipc_dict[0].pid,C_FAIL,buf);
+		ipcSendMessage(ipc_dict[0].pid,C_FAIL,buf);
 
 		// wait for ROOT to kill us
 		pause();
@@ -132,12 +123,12 @@ main(int argc, char* argv[])
 		{
 			ipcLog("SQL error: %s\n", zErrMsg);
 			sprintf(err_buf,"Sqlite Error: %s",zErrMsg);
-			ipcAddText(pid,rsvp,err_buf); // from pid, to pid, text
+			ipcAddText(rsvp,err_buf); // to pid, text
 		}
 		else
 		{
 			ipcLog("SQL success\n");
 		}
-		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"");
+		ipcSendMessage(msg->rsvp,C_EOF,"");
 	}
 }

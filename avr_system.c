@@ -1,36 +1,16 @@
 #include "avr.h"
 #include <libgen.h>
 
-static pid_t
-  pid
-, ppid
-, cpid
-;
-
-int slot;
-
 extern IPC_DICT *ipc_dict;
 static IPC_DICT *dict;
-
 static struct termio tty;
 
 void // signal handler
 sysTerminate(int sig)
 {
 int x,id;
-	ipcLog("Proc %d P_SYSTEM Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
-	ipcLog("Proc %d P_SYSTEM cpid=%d\n",cpid);
-	if(cpid)
-	{
-		ipcLog("Killing Child P_SYSTEM Process %d\n",cpid);
-		kill(cpid,SIGTERM);
-
-		// don't leave a zombie
-		id=wait(&x);
-
-		ipcLog("Child Process %d died With exit code=%d\n",id,x);
-	}
-	ipcExit(getpid(),0,0);
+	ipcLog("Proc %d P_SYSTEM Terminiate Requested SIG: %s!\n",pid,ipcSigName(sig));
+	ipcExit(0,0);
 }
 
 int 
@@ -44,9 +24,6 @@ main(int argc, char* argv[])
 	signal(SIGINT, sysTerminate);
 	signal(SIGTERM,sysTerminate);
 
-	ppid=getppid(); 
-	pid=getpid();
-
 	/* set up application logging */
 	logOpen("system");
 
@@ -55,18 +32,17 @@ main(int argc, char* argv[])
 	ipcLog("Chdir: %s\n",strerror(errno));
 
 	/* pick up shared memory environment */
-	slot=ipcGetIpcResources(pid,P_SYSTEM,"/tmp/ipc_application");
-	//ipcLog("Got memory at %x slot=%d\n",ipc_dict,slot);
-	dict=&ipc_dict[slot];
+	ipcGetIpcResources(P_SYSTEM,"/tmp/ipc_application");
 
-	//msqid=ipcGetMessageQueue(pid,P_SYSTEM,"/tmp/ipc_application");
+	//ipcLog("Got memory at %x ipc_slot=%d\n",ipc_dict,ipc_slot);
+	dict=&ipc_dict[ipc_slot];
 
 	// notify root process we are here
-	ipcNotify(pid,msqid);
+	ipcNotify(pid);
 
-	ipcLog("P_SYSTEM Process %d On-Line in slot %d\n"
+	ipcLog("P_SYSTEM Process %d On-Line in ipc_slot %d\n"
 	, pid
-	, slot
+	, ipc_slot
 	);
 
 	for(;;)
@@ -100,9 +76,9 @@ main(int argc, char* argv[])
 			if(chdir(aa[1])<0)
 			{
 				sprintf(buf,"cd failed: %s",strerror(errno));
-				ipcSendMessage(pid,msqid,msg->rsvp,C_ERR,buf);
+				ipcSendMessage(msg->rsvp,C_ERR,buf);
 			}
-			ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"cd Ok");
+			ipcSendMessage(msg->rsvp,C_EOF,"cd Ok");
 			continue;
 		}
 
@@ -111,7 +87,7 @@ main(int argc, char* argv[])
 			// uh oh
 			sprintf(buf,"popen(%s) failed: %s\n",cmd,strerror(errno));
 			ipcLog("%s",buf);
-			ipcSendMessage(pid,msqid,msg->rsvp,C_ERR,buf);
+			ipcSendMessage(msg->rsvp,C_ERR,buf);
 		}
 
 		while(fgets(buf,sizeof(buf),pp)!=NULL)
@@ -127,13 +103,13 @@ main(int argc, char* argv[])
 
 			// ipcLog("<< %s\n",buf);
 
-			ipcAddText(pid,msg->rsvp,buf); // from pid, to pid, text
+			ipcAddText(msg->rsvp,buf); // to pid, text
 		}
 
 		// close the pipe to command
 		fclose(pp);
 
 		// that's all folks
-		ipcSendMessage(pid,msqid,msg->rsvp,C_EOF,"Success");
+		ipcSendMessage(msg->rsvp,C_EOF,"Success");
 	}
 }

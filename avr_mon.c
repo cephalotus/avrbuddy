@@ -2,13 +2,7 @@
 #include <termio.h>
 #include <fcntl.h>
 
-static pid_t
-  pid
-, ppid
-, cpid
-;
-
-int slot;
+static pid_t cpid;
 
 extern IPC_DICT *ipc_dict;
 static IPC_DICT *dict;
@@ -19,7 +13,7 @@ void // signal handler
 shellTerminate(int sig)
 {
 	ipcLog("Proc %d P_MON Terminiate Requested SIG: %s!\n",getpid(),ipcSigName(sig));
-	ipcExit(getpid(),0,0);
+	ipcExit(0,0);
 }
 
 void // signal handler
@@ -47,19 +41,19 @@ int cnt, c, x, i;
 	ipcLog("Starting P_MON process!\n");
 
 	/* pick up shared memory environment */
-	slot=ipcGetIpcResources(pid,P_MON,"/tmp/ipc_application");
+	ipcGetIpcResources(P_MON,"/tmp/ipc_application");
 
-	//ipcLog("Got memory at %x slot=%d\n",ipc_dict,slot);
-	dict=&ipc_dict[slot];
+	//ipcLog("Got memory at %x ipc_slot=%d\n",ipc_dict,ipc_slot);
+	dict=&ipc_dict[ipc_slot];
 
 	//msqid=ipcGetMessageQueue(pid,P_MON,"/tmp/ipc_application");
 
 	// notify root process we are here
-	ipcNotify(pid,msqid);
+	ipcNotify(pid);
 
-	ipcLog("P_MON Process %d On-Line in slot %d\n"
+	ipcLog("P_MON Process %d On-Line in ipc_slot %d\n"
 	, pid
-	, slot
+	, ipc_slot
 	);
 
 
@@ -262,7 +256,7 @@ char com_buf[256];
 
 	ipcLog("Send --> from:%d to:%d\n",pid,addr);
 
-	ipcSendMessage(pid, msqid, addr, cmd, arg);
+	ipcSendMessage(addr, cmd, arg);
 
 	ipcLog("Sent %s to pid:%d\n",arg,addr);
 
@@ -294,7 +288,7 @@ char com_buf[256];
 
 	case C_EOF :
 		//printf("EOF\n");
-		while((txt=ipcGetText(msg->rsvp,pid))!=NULL)
+		while((txt=ipcGetText(msg->rsvp))!=NULL)
 		{
 			printf("%s\n",txt->text);
 			/*
